@@ -21,3 +21,6 @@
 *~
 .DS_Store
 Thumbs.db
+
+# Repo terpisah: skema DB (clone dari github.com/Akyrr/absensi)
+database/

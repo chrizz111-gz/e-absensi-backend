@@ -58,7 +58,7 @@ e-absensi-backend/
 ├── routes/                 # Registrasi seluruh route
 ├── dto/                    # Request/Response DTO
 ├── utils/                  # JWT, password, OTP, mailer, response envelope, error
-├── database/               # Skrip SQL migrasi (001_, 002_, 003_)
+├── database/               # (repo terpisah) Skrip SQL migrasi - clone dari Akyrr/absensi
 └── .env                    # Kredensial (JANGAN di-commit)
 ```
 
@@ -73,7 +73,13 @@ e-absensi-backend/
 
 ### 1. Siapkan database
 
-Jalankan skrip migrasi secara berurutan lewat `psql` (Windows: `C:\Program Files\PostgreSQL\18\bin\psql.exe`):
+Skema database berada di **repo terpisah** (dikelola tim DB) dan **tidak ikut** ter-clone bersama repo ini. Clone dulu ke folder `database/`:
+
+```bash
+git clone https://github.com/Akyrr/absensi.git database
+```
+
+Lalu jalankan skrip migrasi secara berurutan lewat `psql` (Windows: `C:\Program Files\PostgreSQL\18\bin\psql.exe`):
 
 ```powershell
 $env:PGPASSWORD="<password>"
@@ -81,6 +87,9 @@ psql -U <user> -h 127.0.0.1 -d absensi -f database\001_epic1_auth.sql
 psql -U <user> -h 127.0.0.1 -d absensi -f database\002_access_and_encoding.sql
 psql -U <user> -h 127.0.0.1 -d absensi -f database\003_add_failed_login_at.sql
 ```
+
+> Saat ada epic baru, ambil update skema dengan: `git -C database pull`
+
 
 ### 2. Konfigurasi `.env`
 
