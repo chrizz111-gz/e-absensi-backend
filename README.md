@@ -88,7 +88,17 @@ psql -U <user> -h 127.0.0.1 -d absensi -f database\003_add_failed_login_at.sql
 
 ### 2. Konfigurasi `.env`
 
-Salin `.env.example` menjadi `.env` lalu isi nilainya (lihat [Environment Variables](#environment-variables)).
+Salin template lalu isi secret JWT secara otomatis (secret **tidak** disimpan di repo):
+
+```powershell
+Copy-Item .env.example .env
+./scripts/gen-secrets.ps1
+```
+
+> **macOS/Linux:** `cp .env.example .env && ./scripts/gen-secrets.sh`
+>
+> File `.env` sudah masuk `.gitignore` — **jangan pernah** di-commit. Alternatif cepat: minta file `.env` dev ke maintainer lewat chat privat.
+> Nilai lain (Google, SMTP, dll.) opsional — lihat [Environment Variables](#environment-variables).
 
 ### 3. Jalankan
 
