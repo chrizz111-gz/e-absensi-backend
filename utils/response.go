@@ -13,6 +13,11 @@ const (
 	CodeNotFound     = "NOT_FOUND"
 	CodeInternal     = "INTERNAL_ERROR"
 
+	CodeStaleData           = "STALE_DATA"
+	CodeLastAdminProtected  = "LAST_ADMIN_PROTECTED"
+	CodeSelfActionForbidden = "SELF_ACTION_FORBIDDEN"
+	CodeAccountHasHistory   = "ACCOUNT_HAS_HISTORY"
+
 	CodeRegisterSuccess = "AUTH_REGISTER_SUCCESS"
 	CodeLoginSuccess    = "AUTH_LOGIN_SUCCESS"
 	CodeLogoutSuccess   = "AUTH_LOGOUT_SUCCESS"
@@ -25,12 +30,17 @@ const (
 	CodeSessionRevoked     = "AUTH_SESSION_REVOKED"
 
 	CodeOTPRequested     = "OTP_REQUESTED"
+	CodeOTPVerified      = "OTP_VERIFIED"
 	CodePasswordChanged  = "AUTH_PASSWORD_CHANGED"
+	CodePasswordSame     = "AUTH_PASSWORD_SAME"
 	CodeOTPInvalid       = "OTP_INVALID"
 	CodeOTPExpired       = "OTP_EXPIRED"
 	CodeOTPTooMany       = "OTP_TOO_MANY_ATTEMPTS"
 	CodeOTPResendTooSoon = "OTP_RESEND_TOO_SOON"
 	CodeOTPResendLimit   = "OTP_RESEND_LIMIT"
+
+	CodeResetTokenInvalid = "AUTH_RESET_TOKEN_INVALID"
+	CodeResetTokenExpired = "AUTH_RESET_TOKEN_EXPIRED"
 
 	CodeRateLimited           = "RATE_LIMITED"
 	CodeGoogleLoginSuccess    = "AUTH_GOOGLE_SUCCESS"
@@ -40,13 +50,37 @@ const (
 	CodeAccountNotFound       = "AUTH_ACCOUNT_NOT_FOUND"
 )
 
+// Kode detail field (dipakai pada errors[].code).
+const (
+	FieldRequired          = "FIELD_REQUIRED"
+	FieldInvalidEmail      = "INVALID_EMAIL"
+	FieldTooShort          = "TOO_SHORT"
+	FieldTooLong           = "TOO_LONG"
+	FieldInvalidNISN       = "INVALID_NISN"
+	FieldInvalidUsername   = "INVALID_USERNAME"
+	FieldInvalidOTP        = "INVALID_OTP_FORMAT"
+	FieldPasswordMatch     = "PASSWORD_MISMATCH"
+	FieldEmailTaken        = "EMAIL_TAKEN"
+	FieldNISNTaken         = "NISN_TAKEN"
+	FieldUsernameTaken     = "USERNAME_TAKEN"
+	FieldInvalidID         = "INVALID_ID"
+	FieldInvalidStatus     = "INVALID_STATUS"
+	FieldInvalidPage       = "INVALID_PAGE"
+	FieldInvalidLimit      = "INVALID_LIMIT"
+	FieldInvalidReason     = "INVALID_INACTIVE_REASON"
+	FieldRoleNotFound      = "ROLE_NOT_FOUND"
+	FieldRoleNotAssignable = "ROLE_NOT_ASSIGNABLE"
+	FieldStudentLocked     = "STUDENT_ACCOUNT_LOCKED"
+	FieldNoUpdateFields    = "NO_UPDATE_FIELDS"
+)
+
 // APIResponse adalah envelope standar seluruh endpoint.
 type APIResponse struct {
-	Success bool        `json:"success"`
-	Code    string      `json:"code"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
-	Errors  []string    `json:"errors,omitempty"`
+	Success bool         `json:"success"`
+	Code    string       `json:"code"`
+	Message string       `json:"message"`
+	Data    interface{}  `json:"data,omitempty"`
+	Errors  []FieldError `json:"errors,omitempty"`
 }
 
 // SuccessResponse mengirim response sukses dengan data opsional.
@@ -68,13 +102,14 @@ func ErrorResponse(c *gin.Context, status int, code, message string) {
 	})
 }
 
-// ErrorResponseWithDetails mengirim response gagal beserta daftar error
-// (umumnya untuk kegagalan validasi).
-func ErrorResponseWithDetails(c *gin.Context, status int, code, message string, errs []string) {
+// ErrorResponseWithDetails mengirim response gagal beserta detail field dan
+// data tambahan (misalnya sisa percobaan OTP).
+func ErrorResponseWithDetails(c *gin.Context, status int, code, message string, errs []FieldError, data interface{}) {
 	c.JSON(status, APIResponse{
 		Success: false,
 		Code:    code,
 		Message: message,
+		Data:    data,
 		Errors:  errs,
 	})
 }

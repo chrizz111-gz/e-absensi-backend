@@ -3,11 +3,12 @@ package dto
 // RegisterStudentRequest adalah payload registrasi mandiri siswa (F1.1).
 // Username opsional; NISN wajib 10 digit.
 type RegisterStudentRequest struct {
-	Name     string `json:"name" binding:"required,min=2,max=150"`
-	Email    string `json:"email" binding:"required,email,max=255"`
-	NISN     string `json:"nisn" binding:"required,nisn"`
-	Password string `json:"password" binding:"required,min=8,max=72"`
-	Username string `json:"username" binding:"omitempty,min=3,max=50"`
+	Name            string `json:"name" binding:"required,min=2,max=150"`
+	Email           string `json:"email" binding:"required,email,max=255"`
+	NISN            string `json:"nisn" binding:"required,nisn"`
+	Password        string `json:"password" binding:"required,strongpassword"`
+	ConfirmPassword string `json:"confirm_password" binding:"required,eqfield=Password"`
+	Username        string `json:"username" binding:"omitempty,username"`
 }
 
 // LoginRequest adalah payload login manual (F1.2). Identifier dapat berupa

@@ -58,7 +58,7 @@ func (s *AuthService) RegisterStudent(ctx context.Context, req dto.RegisterStude
 		return nil, utils.ErrInternal
 	}
 	if emailExists {
-		return nil, utils.ErrConflict.WithMessage("Email sudah terdaftar")
+		return nil, utils.ErrConflict.WithField("email", utils.FieldEmailTaken, "Email sudah terdaftar")
 	}
 
 	nisnExists, err := s.users.ExistsByNISN(nisn)
@@ -66,13 +66,13 @@ func (s *AuthService) RegisterStudent(ctx context.Context, req dto.RegisterStude
 		return nil, utils.ErrInternal
 	}
 	if nisnExists {
-		return nil, utils.ErrConflict.WithMessage("NISN sudah terdaftar")
+		return nil, utils.ErrConflict.WithField("nisn", utils.FieldNISNTaken, "NISN sudah terdaftar")
 	}
 
 	var username *string
-	if trimmed := strings.TrimSpace(req.Username); trimmed != "" {
+	if trimmed := strings.ToLower(strings.TrimSpace(req.Username)); trimmed != "" {
 		if _, err := s.users.FindByUsername(trimmed); err == nil {
-			return nil, utils.ErrConflict.WithMessage("Username sudah dipakai")
+			return nil, utils.ErrConflict.WithField("username", utils.FieldUsernameTaken, "Username sudah dipakai")
 		} else if !errors.Is(err, repositories.ErrNotFound) {
 			return nil, utils.ErrInternal
 		}

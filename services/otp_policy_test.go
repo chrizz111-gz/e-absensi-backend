@@ -36,6 +36,13 @@ func TestOTPAttemptsExhausted(t *testing.T) {
 	assert.True(t, OTPAttemptsExhausted(&models.OTPCode{AttemptCount: 6}, 5))
 }
 
+func TestOTPRemainingAttempts(t *testing.T) {
+	assert.Equal(t, 5, OTPRemainingAttempts(0, 5))
+	assert.Equal(t, 4, OTPRemainingAttempts(1, 5))
+	assert.Equal(t, 0, OTPRemainingAttempts(5, 5))
+	assert.Equal(t, 0, OTPRemainingAttempts(6, 5))
+}
+
 func TestOTPPurposeMatches(t *testing.T) {
 	otp := &models.OTPCode{Purpose: models.PurposeChangePassword}
 	assert.True(t, OTPPurposeMatches(otp, models.PurposeChangePassword))

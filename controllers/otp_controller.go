@@ -30,29 +30,53 @@ func (h *OTPController) RequestChangePasswordOTP(c *gin.Context) {
 		return
 	}
 
-	if err := h.otp.RequestChangePasswordOTP(c.Request.Context(), userID); err != nil {
+	result, err := h.otp.RequestChangePasswordOTP(c.Request.Context(), userID)
+	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, utils.CodeOTPRequested, "Kode OTP telah dikirim ke email Anda", nil)
+	utils.SuccessResponse(c, http.StatusOK, utils.CodeOTPRequested, "Kode OTP telah dikirim ke email Anda", toOTPRequestedResponse(result))
 }
 
-// ChangePassword menangani POST change-password/verify (F1.4).
-func (h *OTPController) ChangePassword(c *gin.Context) {
+// VerifyChangePasswordOTP menangani POST change-password/verify-otp (F1.4).
+func (h *OTPController) VerifyChangePasswordOTP(c *gin.Context) {
 	userID, ok := middlewares.CurrentUserID(c)
 	if !ok {
 		c.Error(utils.ErrUnauthorized)
 		return
 	}
 
-	var req dto.ChangePasswordRequest
+	var req dto.VerifyOTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(utils.NewValidationError(utils.FormatValidationErrors(err)))
 		return
 	}
 
-	if err := h.passwords.ChangePassword(c.Request.Context(), userID, req.Code, req.NewPassword); err != nil {
+	result, err := h.passwords.VerifyChangePasswordOTP(c.Request.Context(), userID, req.Code)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	utils.SuccessResponse(c, http.StatusOK, utils.CodeOTPVerified, "Kode OTP valid. Silakan buat kata sandi baru.", result)
+}
+
+// ConfirmChangePassword menangani POST change-password/confirm (F1.4).
+func (h *OTPController) ConfirmChangePassword(c *gin.Context) {
+	userID, ok := middlewares.CurrentUserID(c)
+	if !ok {
+		c.Error(utils.ErrUnauthorized)
+		return
+	}
+
+	var req dto.SetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(utils.NewValidationError(utils.FormatValidationErrors(err)))
+		return
+	}
+
+	if err := h.passwords.ConfirmChangePassword(c.Request.Context(), userID, req.ResetToken, req.NewPassword); err != nil {
 		c.Error(err)
 		return
 	}
@@ -68,26 +92,53 @@ func (h *OTPController) RequestResetPasswordOTP(c *gin.Context) {
 		return
 	}
 
-	if err := h.otp.RequestResetPasswordOTP(c.Request.Context(), req.Email); err != nil {
+	result, err := h.otp.RequestResetPasswordOTP(c.Request.Context(), req.Email)
+	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, utils.CodeOTPRequested, "Jika email terdaftar, kode OTP telah dikirim", nil)
+	utils.SuccessResponse(c, http.StatusOK, utils.CodeOTPRequested, "Jika email terdaftar, kode OTP telah dikirim", toOTPRequestedResponse(result))
 }
 
-// ResetPassword menangani POST forgot-password/verify (F1.5). Publik.
-func (h *OTPController) ResetPassword(c *gin.Context) {
-	var req dto.ResetPasswordRequest
+// VerifyResetPasswordOTP menangani POST forgot-password/verify-otp (F1.5). Publik.
+func (h *OTPController) VerifyResetPasswordOTP(c *gin.Context) {
+	var req dto.VerifyResetPasswordOTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(utils.NewValidationError(utils.FormatValidationErrors(err)))
 		return
 	}
 
-	if err := h.passwords.ResetPassword(c.Request.Context(), req.Email, req.Code, req.NewPassword); err != nil {
+	result, err := h.passwords.VerifyResetPasswordOTP(c.Request.Context(), req.Email, req.Code)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	utils.SuccessResponse(c, http.StatusOK, utils.CodeOTPVerified, "Kode OTP valid. Silakan buat kata sandi baru.", result)
+}
+
+// ResetPassword menangani POST forgot-password/reset (F1.5). Publik.
+func (h *OTPController) ResetPassword(c *gin.Context) {
+	var req dto.SetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(utils.NewValidationError(utils.FormatValidationErrors(err)))
+		return
+	}
+
+	if err := h.passwords.ResetPasswordWithToken(c.Request.Context(), req.ResetToken, req.NewPassword); err != nil {
 		c.Error(err)
 		return
 	}
 
 	utils.SuccessResponse(c, http.StatusOK, utils.CodePasswordChanged, "Password berhasil direset. Semua sesi dihentikan, silakan login ulang.", nil)
+}
+
+// toOTPRequestedResponse memetakan hasil service ke DTO response.
+func toOTPRequestedResponse(result *services.OTPIssueResult) dto.OTPRequestedResponse {
+	return dto.OTPRequestedResponse{
+		AttemptsRemaining:  result.AttemptsRemaining,
+		ExpiresAt:          result.ExpiresAt,
+		ResendAfterSeconds: result.ResendAfterSeconds,
+	}
 }

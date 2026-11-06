@@ -16,6 +16,15 @@ func OTPAttemptsExhausted(otp *models.OTPCode, maxAttempts int) bool {
 	return int(otp.AttemptCount) >= maxAttempts
 }
 
+// OTPRemainingAttempts menghitung sisa percobaan yang masih dimiliki satu OTP.
+func OTPRemainingAttempts(attemptCount int16, maxAttempts int) int {
+	remaining := maxAttempts - int(attemptCount)
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
 // OTPPurposeMatches memastikan OTP hanya dipakai untuk purpose yang sesuai
 // (change_password tidak bisa dipakai untuk reset_password, dan sebaliknya).
 func OTPPurposeMatches(otp *models.OTPCode, purpose string) bool {

@@ -16,12 +16,15 @@ var (
 	LoginAttemptWindow     time.Duration
 	AccountLockDuration    time.Duration
 
-	// OTP: 8 karakter, berlaku 5 menit, resend setelah 60 detik, maks 5 resend/jam,
-	// maks 5 percobaan salah sebelum kode hangus.
-	OTPTTL              time.Duration
-	OTPResendCooldown   time.Duration
-	OTPMaxResendPerHour int
-	OTPMaxAttempts      int
+	// OTP: 6 karakter alfanumerik uppercase (A-Z, 2-9; tanpa 0/O/1/I/L),
+	// berlaku 5 menit, resend setelah 60 detik, maks 5 resend/jam, maks 5
+	// percobaan salah sebelum kode hangus.
+	OTPLength             int
+	OTPTTL                time.Duration
+	OTPResendCooldown     time.Duration
+	OTPMaxResendPerHour   int
+	OTPMaxAttempts        int
+	PasswordResetTokenTTL time.Duration
 
 	// Rate limit per-IP untuk endpoint sensitif (login/register/OTP/Google).
 	RateLimitRPS   float64
@@ -35,10 +38,18 @@ func Init() {
 	LoginAttemptWindow = envDurationDefault("LOGIN_ATTEMPT_WINDOW", 15*time.Minute)
 	AccountLockDuration = envDurationDefault("ACCOUNT_LOCK_DURATION", 15*time.Minute)
 
+	OTPLength = envIntDefault("OTP_LENGTH", 6)
+	if OTPLength < 4 || OTPLength > 10 {
+		OTPLength = 6
+	}
 	OTPTTL = envDurationDefault("OTP_TTL", 5*time.Minute)
 	OTPResendCooldown = envDurationDefault("OTP_RESEND_COOLDOWN", 60*time.Second)
 	OTPMaxResendPerHour = envIntDefault("OTP_MAX_RESEND_PER_HOUR", 5)
 	OTPMaxAttempts = envIntDefault("OTP_MAX_ATTEMPTS", 5)
+	if OTPMaxAttempts < 1 {
+		OTPMaxAttempts = 5
+	}
+	PasswordResetTokenTTL = envDurationDefault("PASSWORD_RESET_TOKEN_TTL", 10*time.Minute)
 
 	RateLimitRPS = envFloatDefault("RATE_LIMIT_RPS", 5)
 	RateLimitBurst = envIntDefault("RATE_LIMIT_BURST", 10)

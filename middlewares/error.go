@@ -3,9 +3,11 @@ package middlewares
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
+	"e-absensi-backend/dto"
 	"e-absensi-backend/utils"
 )
 
@@ -24,14 +26,27 @@ func ErrorHandler() gin.HandlerFunc {
 
 		var appErr *utils.AppError
 		if errors.As(err, &appErr) {
-			if len(appErr.Errors) > 0 {
-				utils.ErrorResponseWithDetails(c, appErr.HTTPStatus, appErr.Code, appErr.Message, appErr.Errors)
-				return
-			}
-			utils.ErrorResponse(c, appErr.HTTPStatus, appErr.Code, appErr.Message)
+			setRetryAfter(c, appErr.Data)
+			utils.ErrorResponseWithDetails(c, appErr.HTTPStatus, appErr.Code, appErr.Message, appErr.Errors, appErr.Data)
 			return
 		}
 
 		utils.ErrorResponse(c, http.StatusInternalServerError, utils.CodeInternal, "Terjadi kesalahan pada server")
+	}
+}
+
+// setRetryAfter menambahkan header Retry-After bila error membawa data cooldown.
+func setRetryAfter(c *gin.Context, data interface{}) {
+	seconds := 0
+	switch v := data.(type) {
+	case dto.RetryAfterData:
+		seconds = v.RetryAfterSeconds
+	case *dto.RetryAfterData:
+		if v != nil {
+			seconds = v.RetryAfterSeconds
+		}
+	}
+	if seconds > 0 {
+		c.Header("Retry-After", strconv.Itoa(seconds))
 	}
 }

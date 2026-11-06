@@ -16,8 +16,9 @@ import (
 type TokenType string
 
 const (
-	AccessToken  TokenType = "access"
-	RefreshToken TokenType = "refresh"
+	AccessToken        TokenType = "access"
+	RefreshToken       TokenType = "refresh"
+	PasswordResetToken TokenType = "password_reset"
 )
 
 const (
@@ -43,6 +44,8 @@ type Claims struct {
 	Email     string    `json:"email,omitempty"`
 	Roles     []string  `json:"roles,omitempty"`
 	SessionID string    `json:"sid,omitempty"`
+	OTPID     int64     `json:"otp_id,omitempty"`
+	Purpose   string    `json:"purpose,omitempty"`
 	TokenType TokenType `json:"typ"`
 	jwt.RegisteredClaims
 }
@@ -109,6 +112,25 @@ func GenerateRefreshToken(userID int64, sessionID string) (string, error) {
 		SessionID: sessionID,
 		TokenType: RefreshToken,
 	}, durationFromEnv("JWT_REFRESH_TTL", defaultRefreshTTL))
+}
+
+// GeneratePasswordResetToken issues a short-lived token that proves an OTP was
+// verified. The token is bound to the OTP row so it becomes unusable as soon as
+// that OTP is consumed or invalidated.
+func GeneratePasswordResetToken(userID, otpID int64, purpose string, ttl time.Duration) (string, error) {
+	secret, err := accessSecret()
+	if err != nil {
+		return "", err
+	}
+	if ttl <= 0 {
+		return "", ErrInvalidToken
+	}
+	return signToken(secret, Claims{
+		UserID:    userID,
+		OTPID:     otpID,
+		Purpose:   purpose,
+		TokenType: PasswordResetToken,
+	}, ttl)
 }
 
 // AccessTokenTTL mengembalikan masa berlaku access token.
@@ -179,6 +201,11 @@ func ParseAccessToken(tokenString string) (*Claims, error) {
 // ParseRefreshToken is a convenience wrapper around ParseToken.
 func ParseRefreshToken(tokenString string) (*Claims, error) {
 	return ParseToken(tokenString, RefreshToken)
+}
+
+// ParsePasswordResetToken is a convenience wrapper around ParseToken.
+func ParsePasswordResetToken(tokenString string) (*Claims, error) {
+	return ParseToken(tokenString, PasswordResetToken)
 }
 
 func secretForType(tokenType TokenType) ([]byte, error) {

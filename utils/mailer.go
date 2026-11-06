@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"e-absensi-backend/config"
 )
 
 // EmailSender adalah abstraksi pengiriman email OTP. Implementasi produksi
@@ -64,9 +66,13 @@ func (s *SMTPEmailSender) SendOTP(to, name, code, purpose string) error {
 		subject = "Kode Reset Password E-Absensi"
 	}
 
+	minutes := int(config.OTPTTL.Minutes())
+	if minutes <= 0 {
+		minutes = 5
+	}
 	body := fmt.Sprintf(
-		"<p>Halo %s,</p><p>Kode OTP Anda: <b>%s</b></p><p>Kode berlaku 5 menit. Jangan bagikan kode ini kepada siapa pun.</p>",
-		name, code,
+		"<p>Halo %s,</p><p>Kode OTP Anda: <b>%s</b></p><p>Kode berlaku %d menit. Jangan bagikan kode ini kepada siapa pun.</p>",
+		name, code, minutes,
 	)
 
 	message := buildMessage(s.From, to, subject, body)

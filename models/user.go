@@ -21,6 +21,8 @@ type User struct {
 	GoogleID            *string    `gorm:"column:google_id;size:255" json:"-"`
 	AvatarURL           *string    `gorm:"column:avatar_url;size:500" json:"avatar_url,omitempty"`
 	IsActive            bool       `gorm:"column:is_active;not null;default:true" json:"is_active"`
+	InactiveReason      *string    `gorm:"column:inactive_reason;size:20" json:"inactive_reason,omitempty"`
+	DeactivatedAt       *time.Time `gorm:"column:deactivated_at" json:"deactivated_at,omitempty"`
 	FailedLoginAttempts int16      `gorm:"column:failed_login_attempts;not null;default:0" json:"-"`
 	FailedLoginAt       *time.Time `gorm:"column:failed_login_at" json:"-"`
 	LockedUntil         *time.Time `gorm:"column:locked_until" json:"locked_until,omitempty"`

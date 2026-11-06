@@ -21,6 +21,15 @@ func (r *RoleRepository) WithTx(tx *gorm.DB) *RoleRepository {
 	return &RoleRepository{db: tx}
 }
 
+// List mengembalikan seluruh role master beserta metadata tampilan.
+func (r *RoleRepository) List() ([]models.Role, error) {
+	var roles []models.Role
+	if err := r.db.Order("id").Find(&roles).Error; err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
 // FindByName mencari satu role berdasarkan nama.
 func (r *RoleRepository) FindByName(name string) (*models.Role, error) {
 	var role models.Role
@@ -33,7 +42,7 @@ func (r *RoleRepository) FindByName(name string) (*models.Role, error) {
 // FindByNames mencari beberapa role sekaligus berdasarkan nama.
 func (r *RoleRepository) FindByNames(names []string) ([]models.Role, error) {
 	var roles []models.Role
-	if err := r.db.Where("name IN ?", names).Find(&roles).Error; err != nil {
+	if err := r.db.Where("name IN ?", names).Order("id").Find(&roles).Error; err != nil {
 		return nil, err
 	}
 	return roles, nil

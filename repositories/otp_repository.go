@@ -43,6 +43,34 @@ func (r *OTPRepository) FindLatestActive(userID int64, purpose string) (*models.
 	return &otp, nil
 }
 
+// FindLatest mengambil OTP terbaru untuk user & purpose, termasuk yang sudah
+// dipakai. Dipakai saat verifikasi agar status "percobaan habis" tetap bisa
+// dilaporkan setelah kode dihanguskan.
+func (r *OTPRepository) FindLatest(userID int64, purpose string) (*models.OTPCode, error) {
+	var otp models.OTPCode
+	err := r.db.
+		Where("user_id = ? AND purpose = ?", userID, purpose).
+		Order("created_at DESC").
+		First(&otp).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	return &otp, nil
+}
+
+// ConsumeIfActive menandai OTP sebagai terpakai hanya jika masih aktif dan
+// milik user/purpose yang benar. RowsAffected=0 berarti OTP sudah dipakai,
+// kedaluwarsa, atau bukan milik user tersebut.
+func (r *OTPRepository) ConsumeIfActive(id, userID int64, purpose string, now time.Time) (bool, error) {
+	result := r.db.Model(&models.OTPCode{}).
+		Where("id = ? AND user_id = ? AND purpose = ? AND is_used = false AND expired_at > ?", id, userID, purpose, now).
+		Update("is_used", true)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
 // InvalidateActive menandai seluruh OTP aktif milik user & purpose sebagai
 // terpakai (dipakai saat resend/permintaan kode baru).
 func (r *OTPRepository) InvalidateActive(userID int64, purpose string) error {
