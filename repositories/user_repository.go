@@ -13,11 +13,12 @@ import (
 
 // UserListParams adalah filter daftar user yang sudah dinormalisasi service.
 type UserListParams struct {
-	Page   int
-	Limit  int
-	Q      string
-	Roles  []string
-	Status string
+	Page            int
+	Limit           int
+	Q               string
+	Roles           []string
+	Status          string
+	IncludeArchived bool
 }
 
 // AdminLock adalah baris admin yang dikunci selama operasi proteksi last-admin.
@@ -185,10 +186,14 @@ func (r *UserRepository) List(params UserListParams) ([]models.User, int64, erro
 	applyFilters := func(db *gorm.DB) *gorm.DB {
 		query := db.Model(&models.User{})
 
+		if !params.IncludeArchived {
+			query = query.Where("users.archived_at IS NULL")
+		}
+
 		if q := strings.TrimSpace(params.Q); q != "" {
 			like := "%" + utils.EscapeLike(q) + "%"
 			query = query.Where(
-				`(users.name ILIKE ? ESCAPE '\' OR users.email ILIKE ? ESCAPE '\' OR COALESCE(users.username, '') ILIKE ? ESCAPE '\')`,
+				`(users.name ILIKE ? ESCAPE '\' OR users.email ILIKE ? ESCAPE '\' OR COALESCE(users.nisn, '') ILIKE ? ESCAPE '\')`,
 				like, like, like,
 			)
 		}

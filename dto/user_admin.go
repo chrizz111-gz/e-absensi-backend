@@ -4,11 +4,12 @@ import "time"
 
 // UserListFilter adalah parameter tervalidasi untuk GET /users.
 type UserListFilter struct {
-	Page   int
-	Limit  int
-	Q      string
-	Roles  []string
-	Status string
+	Page            int
+	Limit           int
+	Q               string
+	Roles           []string
+	Status          string
+	IncludeArchived bool
 }
 
 // PaginationResponse adalah metadata halaman daftar user.
@@ -25,7 +26,7 @@ type UserRoleSummary struct {
 	Name         string  `json:"name"`
 	Label        string  `json:"label"`
 	Category     string  `json:"category"`
-	IsAssignable bool    `json:"is_assignable"`
+	IsAssignable bool    `json:"assignable"`
 	Description  *string `json:"description,omitempty"`
 }
 
@@ -35,12 +36,12 @@ type UserAdminResponse struct {
 	ID             int64             `json:"id"`
 	Name           string            `json:"name"`
 	Email          string            `json:"email"`
-	Username       *string           `json:"username,omitempty"`
 	NISN           *string           `json:"nisn,omitempty"`
 	AvatarURL      *string           `json:"avatar_url,omitempty"`
 	IsActive       bool              `json:"is_active"`
 	InactiveReason *string           `json:"inactive_reason,omitempty"`
 	DeactivatedAt  *time.Time        `json:"deactivated_at,omitempty"`
+	ArchivedAt     *time.Time        `json:"archived_at,omitempty"`
 	CreatedAt      time.Time         `json:"created_at"`
 	UpdatedAt      time.Time         `json:"updated_at"`
 	Roles          []UserRoleSummary `json:"roles"`
@@ -48,17 +49,17 @@ type UserAdminResponse struct {
 
 // UserListResponse adalah payload GET /users.
 type UserListResponse struct {
-	Users      []UserAdminResponse `json:"users"`
-	Pagination PaginationResponse  `json:"pagination"`
+	Items []UserAdminResponse `json:"items"`
+	Meta  PaginationResponse  `json:"meta"`
 }
 
 // CreateUserRequest adalah payload POST /users. Akun staf dibuat tanpa
-// password/Google; kredensial diatur lewat alur akun masing-masing.
+// password/Google; kredensial diatur lewat alur akun masing-masing. Hanya
+// name, email, dan roles yang diterima (whitelist PRD).
 type CreateUserRequest struct {
-	Name     string   `json:"name" binding:"required,min=2,max=150"`
-	Email    string   `json:"email" binding:"required,email,max=255"`
-	Username string   `json:"username" binding:"omitempty,username"`
-	Roles    []string `json:"roles" binding:"required,min=1,dive,required"`
+	Name  string   `json:"name" binding:"required,min=2,max=150"`
+	Email string   `json:"email" binding:"required"`
+	Roles []string `json:"roles"`
 }
 
 // UpdateUserStatusRequest adalah payload PATCH /users/{id}/status. IsActive
@@ -69,18 +70,17 @@ type UpdateUserStatusRequest struct {
 }
 
 // UpdateUserRolesRequest adalah payload PUT /users/{id}/roles. Array kosong
-// sah dan berarti mencabut seluruh role yang assignable; role terkunci tetap
-// dipertahankan oleh service.
+// berarti mencabut seluruh role assignable; role terkunci dipertahankan dan
+// akun wajib tetap memiliki minimal satu role setelah penggantian.
 type UpdateUserRolesRequest struct {
 	Roles []string `json:"roles"`
 }
 
 // UpdateUserRequest adalah payload PATCH /users/{id}. Field yang tidak dikirim
-// tidak diubah. UpdatedAt wajib berisi nilai terakhir dari GET detail untuk
-// optimistic locking.
+// tidak diubah. UpdatedAt opsional; bila diisi, nilainya harus sama dengan
+// updated_at terakhir dari GET detail untuk optimistic locking.
 type UpdateUserRequest struct {
 	Name      *string    `json:"name"`
 	Email     *string    `json:"email"`
-	Username  *string    `json:"username"`
-	UpdatedAt *time.Time `json:"updated_at" binding:"required"`
+	UpdatedAt *time.Time `json:"updated_at"`
 }

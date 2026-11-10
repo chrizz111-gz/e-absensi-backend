@@ -515,7 +515,6 @@ ini **tidak pernah** memuat `password_hash` atau `google_id`.
   "id": 21,
   "name": "Guru Mapel",
   "email": "guru@example.com",
-  "username": "guru",
   "is_active": true,
   "created_at": "2026-11-06T10:00:00+07:00",
   "updated_at": "2026-11-06T10:05:00+07:00",
@@ -525,7 +524,7 @@ ini **tidak pernah** memuat `password_hash` atau `google_id`.
       "name": "guru_mapel",
       "label": "Guru Mata Pelajaran",
       "category": "staff",
-      "is_assignable": true
+      "assignable": true
     }
   ]
 }
@@ -534,7 +533,7 @@ ini **tidak pernah** memuat `password_hash` atau `google_id`.
 Saat akun nonaktif, response juga memuat `inactive_reason` dan
 `deactivated_at`. `nisn` dan `avatar_url` hanya muncul bila terisi. Role pada
 response dapat berisi role terkunci (`wali_kelas`, `siswa_inti`, `siswa`) dengan
-`is_assignable: false`.
+`assignable: false`.
 
 ### 9. Daftar Role (read-only)
 
@@ -554,14 +553,14 @@ Permission: `role.assign`
         "name": "admin",
         "label": "Admin / Staf Kurikulum",
         "category": "staff",
-        "is_assignable": true
+        "assignable": true
       },
       {
         "id": 5,
         "name": "wali_kelas",
         "label": "Wali Kelas",
         "category": "staff",
-        "is_assignable": false
+        "assignable": false
       }
     ]
   }
@@ -586,7 +585,7 @@ Permission: `permission.view`
         "name": "admin",
         "label": "Admin / Staf Kurikulum",
         "category": "staff",
-        "is_assignable": true
+        "assignable": true
       }
     ],
     "permissions": [
@@ -611,8 +610,8 @@ Permission: `permission.view`
 `permissions`, lalu menandai sel tercentang bila pasangan `role_id` dan
 `permission_id` ada di `grants`.
 
-Error yang mungkin: `401 AUTH_UNAUTHORIZED`, `401 AUTH_TOKEN_EXPIRED`,
-`401 AUTH_ACCOUNT_INACTIVE`, `403 FORBIDDEN`.
+Error yang mungkin: `401 UNAUTHORIZED`, `401 AUTH_TOKEN_EXPIRED`,
+`403 FORBIDDEN`.
 
 ---
 
@@ -628,26 +627,27 @@ Permission: `account.view` — hanya role `admin`.
 |---|---|---|---|
 | `page` | ❌ | `1` | Bilangan bulat ≥ 1 |
 | `limit` | ❌ | `20` | Bilangan bulat 1–100 |
-| `q` | ❌ | — | Pencarian partial pada `name`, `email`, dan `username` |
+| `q` | ❌ | — | Pencarian partial pada `name`, `email`, dan `nisn` |
 | `role[]` | ❌ | — | Nama role; boleh diulang. User cocok bila memiliki **salah satu** role |
 | `status` | ❌ | — | `active` atau `inactive` |
+| `include_archived` | ❌ | `false` | `true` untuk menampilkan akun yang sudah diarsipkan (`archived_at` terisi) |
 
 - Urutan default: `name ASC`, lalu `id ASC`.
 - Karakter `%` dan `_` pada `q` diperlakukan sebagai **teks literal**, bukan wildcard.
+- Akun dengan `archived_at` terisi **disembunyikan secara default** dan hanya muncul bila `include_archived=true`.
 - `total_pages` bernilai `0` bila tidak ada data.
 
 ```json
 {
   "success": true,
-  "code": "SUCCESS",
-  "message": "Daftar user berhasil diambil",
+  "code": "USER_LIST",
+  "message": "Daftar akun berhasil diambil",
   "data": {
-    "users": [
+    "items": [
       {
         "id": 21,
         "name": "Guru Mapel",
         "email": "guru@example.com",
-        "username": "guru",
         "is_active": true,
         "created_at": "2026-11-06T10:00:00+07:00",
         "updated_at": "2026-11-06T10:05:00+07:00",
@@ -657,12 +657,12 @@ Permission: `account.view` — hanya role `admin`.
             "name": "guru_mapel",
             "label": "Guru Mata Pelajaran",
             "category": "staff",
-            "is_assignable": true
+            "assignable": true
           }
         ]
       }
     ],
-    "pagination": {
+    "meta": {
       "page": 1,
       "limit": 20,
       "total": 1,
@@ -672,8 +672,9 @@ Permission: `account.view` — hanya role `admin`.
 }
 ```
 
-Error: `401 AUTH_UNAUTHORIZED`, `403 FORBIDDEN`, `422 VALIDATION_ERROR`
-(`INVALID_PAGE`, `INVALID_LIMIT`, `INVALID_STATUS`).
+Error: `401 UNAUTHORIZED`, `403 FORBIDDEN`, `422 VALIDATION_ERROR`
+(`INVALID_PAGE`, `INVALID_LIMIT`, `INVALID_STATUS`, `ROLE_NOT_FOUND`,
+`INVALID_BOOLEAN`).
 
 ---
 
@@ -685,7 +686,8 @@ Permission: `account.view` — hanya role `admin`.
 
 **Response `200 OK`** → `data` berisi satu `UserAdminResponse`.
 
-Error: `404 NOT_FOUND` bila user tidak ada, `422` bila `id` bukan bilangan positif.
+Error: `404 ACCOUNT_NOT_FOUND` bila user tidak ada, `422 VALIDATION_ERROR`
+(`INVALID_ID`) bila `id` bukan bilangan positif.
 
 ---
 
@@ -695,24 +697,23 @@ Error: `404 NOT_FOUND` bila user tidak ada, `422` bila `id` bukan bilangan posit
 
 Permission: `account.create` — hanya role `admin`.
 
-Akun staf dibuat **tanpa password dan tanpa Google**. Nilai default:
-`password_hash = NULL`, `is_active = true`. Insert `users` dan `user_roles`
-dilakukan dalam **satu transaksi**.
+Akun staf dibuat **tanpa password dan tanpa Google**. Hanya `name`, `email`,
+dan `roles` yang diterima. Nilai default: `password_hash = NULL`,
+`is_active = true`. Insert `users`, `user_roles`, dan event `ACCOUNT_CREATED`
+ke `activity_logs` dilakukan dalam **satu transaksi**.
 
 **Request body**
 
 | Field | Tipe | Wajib | Aturan |
 |---|---|---|---|
-| `name` | string | ✅ | 2–150 karakter |
+| `name` | string | ✅ | 2–150 karakter; di-trim |
 | `email` | string | ✅ | Format email, unik, maks 255; di-trim dan lowercase |
-| `username` | string | ❌ | 3–30 karakter (huruf kecil, angka, titik, underscore), unik |
-| `roles` | string[] | ✅ | Minimal 1 **nama role**, hanya `is_assignable: true` |
+| `roles` | string[] | ✅ | Minimal 1 **nama role**, hanya `assignable: true` |
 
 ```json
 {
   "name": "Guru Mapel",
   "email": "guru@example.com",
-  "username": "guru",
   "roles": ["guru_mapel"]
 }
 ```
@@ -723,14 +724,17 @@ dilakukan dalam **satu transaksi**.
 {
   "success": true,
   "code": "CREATED",
-  "message": "User berhasil dibuat",
+  "message": "Akun berhasil dibuat",
   "data": { "...UserAdminResponse..." }
 }
 ```
 
 Error:
-- `409 CONFLICT` + `errors[].code = EMAIL_TAKEN` / `USERNAME_TAKEN`
-- `422 VALIDATION_ERROR` + `ROLE_NOT_FOUND` / `ROLE_NOT_ASSIGNABLE`
+- `409 EMAIL_ALREADY_EXISTS` + `errors[].field = email`
+- `422 VALIDATION_ERROR` + `INVALID_EMAIL` / `FIELD_REQUIRED` /
+  `ROLE_NOT_FOUND`
+- `422 ROLE_NOT_ASSIGNABLE` untuk role terkunci
+- `422 INVALID_ROLE_COMBINATION` bila `roles` kosong
 
 > `roles` berisi **nama role** (mis. `guru_mapel`), bukan `id`.
 
@@ -758,14 +762,21 @@ Perilaku:
 - User **tidak boleh menonaktifkan akunnya sendiri** → `403 SELF_ACTION_FORBIDDEN`.
 - Deaktivasi Admin terakhir yang masih aktif → `409 LAST_ADMIN_PROTECTED`.
 - Deaktivasi **mencabut seluruh sesi** user tersebut.
-- Aktivasi menghapus `inactive_reason` & `deactivated_at`, serta mereset
-  `failed_login_attempts` (dan state lockout).
+- Aktivasi menghapus `inactive_reason`, `deactivated_at`, dan `archived_at`,
+  serta mereset `failed_login_attempts` (dan state lockout).
 - `inactive_reason` diabaikan saat `is_active=true`.
+- Status yang sama dengan kondisi akun saat ini ditolak:
+  `409 ACCOUNT_ALREADY_ACTIVE` atau `409 ACCOUNT_ALREADY_INACTIVE`.
+- `graduated` hanya valid untuk akun siswa. `no_class` adalah alasan sistem
+  Epic 10 dan **tidak diterima** lewat endpoint manual ini.
+- Setiap perubahan status menulis event `ACCOUNT_ACTIVATED` atau
+  `ACCOUNT_DEACTIVATED` ke `activity_logs` dalam transaksi yang sama.
 
 **Response `200 OK`** → `data` berisi `UserAdminResponse` terbaru.
 
-Error: `403 SELF_ACTION_FORBIDDEN`, `404 NOT_FOUND`,
-`409 LAST_ADMIN_PROTECTED`, `422 VALIDATION_ERROR`
+Error: `403 SELF_ACTION_FORBIDDEN`, `404 ACCOUNT_NOT_FOUND`,
+`409 LAST_ADMIN_PROTECTED`, `409 ACCOUNT_ALREADY_ACTIVE`,
+`409 ACCOUNT_ALREADY_INACTIVE`, `422 VALIDATION_ERROR`
 (`FIELD_REQUIRED`, `INVALID_INACTIVE_REASON`).
 
 ---
@@ -784,7 +795,7 @@ Permission: `role.assign` — hanya role `admin`.
 
 | Field | Tipe | Wajib | Aturan |
 |---|---|---|---|
-| `roles` | string[] | ✅ | Boleh array kosong. Hanya role dengan `is_assignable: true` |
+| `roles` | string[] | ✅ | Boleh array kosong bila role terkunci masih tersisa. Hanya role dengan `assignable: true` |
 
 Perilaku:
 
@@ -792,14 +803,20 @@ Perilaku:
   (`wali_kelas`, `siswa_inti`, `siswa`) **selalu dipertahankan**.
 - Admin yang mencoba mencabut role `admin` dari dirinya sendiri →
   `403 SELF_ACTION_FORBIDDEN`.
-- Mencabut Admin terakhir → `409 LAST_ADMIN_PROTECTED`.
-- `roles: []` mencabut semua role assignable, tetapi role terkunci tetap ada.
+- Mencabut Admin aktif terakhir → `409 LAST_ADMIN_PROTECTED`.
+- `roles: []` mencabut semua role assignable, tetapi akun wajib tetap memiliki
+  minimal satu role (termasuk role terkunci) → jika tidak,
+  `422 INVALID_ROLE_COMBINATION`.
+- Role staf dan siswa tidak boleh dicampur pada satu akun, dan `siswa_inti`
+  wajib bersama `siswa` → `422 INVALID_ROLE_COMBINATION`.
+- Setiap perubahan role menulis event `ROLE_ASSIGNED`/`ROLE_REVOKED` ke
+  `activity_logs` dalam transaksi yang sama.
 
 **Response `200 OK`** → `data` berisi `UserAdminResponse` terbaru.
 
-Error: `403 SELF_ACTION_FORBIDDEN`, `404 NOT_FOUND`,
-`409 LAST_ADMIN_PROTECTED`, `422 VALIDATION_ERROR`
-(`ROLE_NOT_FOUND`, `ROLE_NOT_ASSIGNABLE`).
+Error: `403 SELF_ACTION_FORBIDDEN`, `404 ACCOUNT_NOT_FOUND`,
+`409 LAST_ADMIN_PROTECTED`, `422 ROLE_NOT_ASSIGNABLE`,
+`422 INVALID_ROLE_COMBINATION`, `422 VALIDATION_ERROR` (`ROLE_NOT_FOUND`).
 
 ---
 
@@ -813,10 +830,9 @@ Permission: `account.update` — hanya role `admin`.
 
 | Field | Tipe | Wajib | Aturan |
 |---|---|---|---|
-| `name` | string | ❌ | 2–150 karakter |
-| `email` | string | ❌ | Format email, unik, maks 255 |
-| `username` | string | ❌ | 3–30 karakter; string kosong menghapus username |
-| `updated_at` | string (RFC3339) | ✅ | Nilai `updated_at` terakhir dari GET detail |
+| `name` | string | ❌ | 2–150 karakter; di-trim |
+| `email` | string | ❌ | Format email, unik, maks 255; di-trim dan lowercase |
+| `updated_at` | string (RFC3339) | ❌ | Nilai `updated_at` terakhir dari GET detail; untuk optimistic locking |
 
 ```json
 {
@@ -828,17 +844,25 @@ Permission: `account.update` — hanya role `admin`.
 
 Perilaku:
 
-- **Optimistic locking:** bila `updated_at` sudah tidak sama dengan database →
-  `409 STALE_DATA`. Frontend harus GET ulang lalu mengirim ulang.
+- **Optimistic locking opsional:** bila `updated_at` dikirim dan sudah tidak
+  sama dengan database → `409 STALE_DATA`. Frontend harus GET ulang lalu
+  mengirim ulang.
+- Bila `updated_at` tidak dikirim, perubahan tetap diproses tanpa pengecekan
+  versi.
+- Simpan tanpa perubahan (nilai sama) tetap `200` dan **tidak** menulis event
+  baru.
 - Bila email berubah, `google_id` lama otomatis dikosongkan.
 - Akun dengan role siswa (`category: student`) tidak dapat diubah lewat endpoint
-  ini → `422 STUDENT_ACCOUNT_LOCKED`.
+  ini → `422 ACCOUNT_TYPE_NOT_EDITABLE`.
+- Perubahan yang benar-benar mengubah data menulis event `ACCOUNT_UPDATED` ke
+  `activity_logs` dalam transaksi yang sama.
 
 **Response `200 OK`** → `data` berisi `UserAdminResponse` terbaru.
 
-Error: `404 NOT_FOUND`, `409 CONFLICT` (email/username duplikat),
-`409 STALE_DATA`, `422 VALIDATION_ERROR` (`INVALID_EMAIL`, `INVALID_USERNAME`,
-`STUDENT_ACCOUNT_LOCKED`, `NO_UPDATE_FIELDS`).
+Error: `404 ACCOUNT_NOT_FOUND`, `409 EMAIL_ALREADY_EXISTS`,
+`409 STALE_DATA`, `422 ACCOUNT_TYPE_NOT_EDITABLE`,
+`422 VALIDATION_ERROR` (`INVALID_EMAIL`, `FIELD_REQUIRED`, `TOO_SHORT`,
+`TOO_LONG`).
 
 ---
 
@@ -850,11 +874,15 @@ Permission: `account.delete` — hanya role `admin`.
 
 Perilaku:
 
-- Hanya akun **staf** yang boleh dihapus. Akun siswa → `422 STUDENT_ACCOUNT_LOCKED`.
+- Hanya akun **staf** yang boleh dihapus. Akun siswa →
+  `422 ACCOUNT_TYPE_NOT_EDITABLE`.
 - Tidak boleh menghapus akun sendiri → `403 SELF_ACTION_FORBIDDEN`.
 - Admin terakhir tidak boleh dihapus → `409 LAST_ADMIN_PROTECTED`.
 - Bila user masih direferensikan riwayat data (`ON DELETE RESTRICT`) →
   `409 ACCOUNT_HAS_HISTORY`.
+- User yang tidak ada / sudah terhapus → `404 ACCOUNT_NOT_FOUND`.
+- Snapshot akun ditulis sebagai event `ACCOUNT_DELETED` ke `activity_logs`
+  **sebelum** user dihapus, dalam transaksi yang sama.
 - Relasi `user_roles`, `sessions`, dan OTP ikut terhapus lewat cascade.
 
 **Response `200 OK`**
@@ -863,7 +891,7 @@ Perilaku:
 {
   "success": true,
   "code": "SUCCESS",
-  "message": "User berhasil dihapus",
+  "message": "Akun berhasil dihapus",
   "data": null
 }
 ```
@@ -880,6 +908,7 @@ Branching di frontend sebaiknya memakai field **`code`**, bukan `message`.
 |---|---|---|
 | `SUCCESS` | 200 | Sukses umum |
 | `CREATED` | 201 | Resource dibuat |
+| `USER_LIST` | 200 | Daftar akun berhasil diambil |
 | `AUTH_REGISTER_SUCCESS` | 201 | Registrasi berhasil |
 | `AUTH_LOGIN_SUCCESS` | 200 | Login berhasil |
 | `AUTH_REFRESH_SUCCESS` | 200 | Token diperbarui |
@@ -894,20 +923,27 @@ Branching di frontend sebaiknya memakai field **`code`**, bukan `message`.
 | Code | HTTP | Keterangan |
 |---|---|---|
 | `VALIDATION_ERROR` | 422 | Validasi field gagal (lihat `errors[]`) |
-| `AUTH_UNAUTHORIZED` | 401 | Token tidak ada/tidak valid |
+| `UNAUTHORIZED` | 401 | Token tidak ada/tidak valid, atau akun nonaktif pada request terautentikasi |
 | `AUTH_TOKEN_EXPIRED` | 401 | Access/refresh token kedaluwarsa |
 | `AUTH_SESSION_REVOKED` | 401 | Sesi dicabut/tidak valid |
 | `AUTH_INVALID_CREDENTIALS` | 401 | Email/username atau password salah |
 | `AUTH_ACCOUNT_LOCKED` | 429 | Akun terkunci sementara |
-| `AUTH_ACCOUNT_INACTIVE` | 401/403 | Akun nonaktif: 401 pada request terautentikasi, 403 saat login |
+| `AUTH_ACCOUNT_INACTIVE` | 403 | Akun nonaktif saat login; request terautentikasi memakai `UNAUTHORIZED` |
 | `FORBIDDEN` | 403 | Tidak punya hak akses (role/permission) |
 | `NOT_FOUND` | 404 | Data tidak ditemukan |
+| `ACCOUNT_NOT_FOUND` | 404 | Akun target tidak ditemukan |
 | `AUTH_ACCOUNT_NOT_FOUND` | 404 | Akun (untuk Google) belum terdaftar |
 | `CONFLICT` | 409 | Duplikat data |
+| `EMAIL_ALREADY_EXISTS` | 409 | Email sudah terdaftar pada manajemen akun |
+| `ACCOUNT_ALREADY_ACTIVE` | 409 | Akun sudah aktif |
+| `ACCOUNT_ALREADY_INACTIVE` | 409 | Akun sudah nonaktif |
 | `STALE_DATA` | 409 | `updated_at` sudah berubah; muat ulang lalu coba lagi |
 | `LAST_ADMIN_PROTECTED` | 409 | Operasi akan menghilangkan Admin terakhir |
 | `SELF_ACTION_FORBIDDEN` | 403 | Operasi pada akun sendiri tidak diizinkan |
 | `ACCOUNT_HAS_HISTORY` | 409 | Akun masih memiliki riwayat data (FK `ON DELETE RESTRICT`) |
+| `ROLE_NOT_ASSIGNABLE` | 422 | Role terkunci/tidak boleh diberikan lewat endpoint ini |
+| `INVALID_ROLE_COMBINATION` | 422 | Kombinasi role tidak valid atau akun tanpa role |
+| `ACCOUNT_TYPE_NOT_EDITABLE` | 422 | Akun siswa tidak boleh diubah/dihapus lewat manajemen akun |
 | `INTERNAL_ERROR` | 500 | Kesalahan server |
 | `RATE_LIMITED` | 429 | Terlalu banyak request per-IP |
 | `OTP_INVALID` | 400 | Kode OTP salah |
@@ -941,18 +977,20 @@ Branching di frontend sebaiknya memakai field **`code`**, bukan `message`.
 | `PASSWORD_NEEDS_SYMBOL` | Password belum memuat simbol |
 | `PASSWORD_CONTAINS_WHITESPACE` | Password mengandung spasi |
 | `PASSWORD_MISMATCH` | `confirm_password` tidak sama dengan password baru |
-| `EMAIL_TAKEN` | Email sudah terdaftar |
+| `EMAIL_TAKEN` | Email sudah terdaftar saat registrasi |
+| `EMAIL_ALREADY_EXISTS` | Email sudah terdaftar saat manajemen akun |
 | `NISN_TAKEN` | NISN sudah terdaftar |
 | `USERNAME_TAKEN` | Username sudah dipakai |
 | `INVALID_ID` | Path `id` bukan bilangan positif |
 | `INVALID_PAGE` | `page` bukan bilangan bulat ≥ 1 |
 | `INVALID_LIMIT` | `limit` bukan 1–100 |
 | `INVALID_STATUS` | `status` bukan `active`/`inactive` |
-| `INVALID_INACTIVE_REASON` | `inactive_reason` bukan `graduated`/`transferred`/`other` |
+| `INVALID_INACTIVE_REASON` | `inactive_reason` tidak valid; `graduated` hanya untuk siswa dan `no_class` tidak diterima lewat API manual |
+| `INVALID_BOOLEAN` | Query boolean bukan `true`/`false` |
 | `ROLE_NOT_FOUND` | Ada nama role yang tidak dikenal |
 | `ROLE_NOT_ASSIGNABLE` | Role terkunci/tidak boleh diberikan lewat endpoint ini |
-| `STUDENT_ACCOUNT_LOCKED` | Akun siswa tidak boleh diubah/dihapus lewat manajemen akun |
-| `NO_UPDATE_FIELDS` | Tidak ada field profil yang dikirim untuk diubah |
+| `INVALID_ROLE_COMBINATION` | Role staf+siswa tercampur, `siswa_inti` tanpa `siswa`, atau akun tanpa role |
+| `ACCOUNT_TYPE_NOT_EDITABLE` | Akun siswa tidak boleh diubah/dihapus lewat manajemen akun |
 
 ---
 
@@ -971,7 +1009,7 @@ Endpoint bisa dibatasi per role (middleware `RequireRoles`). Nilai role (dipakai
 | `siswa` | Siswa (role default saat registrasi) |
 
 Role bersifat **union** — satu akun bisa punya beberapa role. Role dengan
-`is_assignable: false` (`wali_kelas`, `siswa_inti`, `siswa`) tidak dapat
+`assignable: false` (`wali_kelas`, `siswa_inti`, `siswa`) tidak dapat
 diberikan lewat `POST /users` maupun `PUT /users/{id}/roles`; role tersebut
 dipertahankan saat role assignable diganti.
 

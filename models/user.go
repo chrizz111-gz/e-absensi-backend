@@ -8,8 +8,10 @@ import "time"
 // Catatan kolom:
 //   - Email disimpan lowercase (ditegakkan trigger fn_users_normalize) dan unik
 //     case-insensitive melalui index uq_users_email_lower.
-//   - PasswordHash & GoogleID dapat dikosongkan, tetapi constraint
-//     ck_users_password_or_google mengharuskan minimal salah satu terisi.
+//   - PasswordHash & GoogleID boleh kosong untuk akun staf yang dibuat Admin;
+//     kredensial diatur lewat alur akun masing-masing.
+//   - ArchivedAt hanya boleh terisi saat IsActive=false dan wajib dikosongkan
+//     saat akun diaktifkan kembali (ck_users_archived_state).
 //   - ID memakai GENERATED ALWAYS AS IDENTITY sehingga tidak boleh diisi manual.
 type User struct {
 	ID                  int64      `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
@@ -23,6 +25,7 @@ type User struct {
 	IsActive            bool       `gorm:"column:is_active;not null;default:true" json:"is_active"`
 	InactiveReason      *string    `gorm:"column:inactive_reason;size:20" json:"inactive_reason,omitempty"`
 	DeactivatedAt       *time.Time `gorm:"column:deactivated_at" json:"deactivated_at,omitempty"`
+	ArchivedAt          *time.Time `gorm:"column:archived_at" json:"archived_at,omitempty"`
 	FailedLoginAttempts int16      `gorm:"column:failed_login_attempts;not null;default:0" json:"-"`
 	FailedLoginAt       *time.Time `gorm:"column:failed_login_at" json:"-"`
 	LockedUntil         *time.Time `gorm:"column:locked_until" json:"locked_until,omitempty"`

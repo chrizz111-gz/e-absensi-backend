@@ -28,16 +28,22 @@ type UserService struct {
 	users    *repositories.UserRepository
 	roles    *repositories.RoleRepository
 	sessions *repositories.SessionRepository
+	audit    AuditLogger
 	now      func() time.Time
 }
 
-// NewUserService membuat UserService baru.
-func NewUserService(db *gorm.DB) *UserService {
+// NewUserService membuat UserService baru. audit boleh nil; service memakai
+// logger no-op agar pemanggil lama tetap aman.
+func NewUserService(db *gorm.DB, audit AuditLogger) *UserService {
+	if audit == nil {
+		audit = NewNoopAuditLogger()
+	}
 	return &UserService{
 		db:       db,
 		users:    repositories.NewUserRepository(db),
 		roles:    repositories.NewRoleRepository(db),
 		sessions: repositories.NewSessionRepository(db),
+		audit:    audit,
 		now:      time.Now,
 	}
 }
@@ -60,12 +66,24 @@ func (s *UserService) List(ctx context.Context, filter dto.UserListFilter) (*dto
 		return nil, validationError("status", utils.FieldInvalidStatus, "status harus active atau inactive")
 	}
 
+	roles := normalizeRoleNames(filter.Roles)
+	if len(roles) > 0 {
+		found, err := s.roles.FindByNames(roles)
+		if err != nil {
+			return nil, utils.ErrInternal
+		}
+		if len(found) != len(roles) {
+			return nil, validationError("role", utils.FieldRoleNotFound, "Ada role yang tidak dikenal")
+		}
+	}
+
 	users, total, err := s.users.List(repositories.UserListParams{
-		Page:   filter.Page,
-		Limit:  filter.Limit,
-		Q:      strings.TrimSpace(filter.Q),
-		Roles:  normalizeRoleNames(filter.Roles),
-		Status: status,
+		Page:            filter.Page,
+		Limit:           filter.Limit,
+		Q:               strings.TrimSpace(filter.Q),
+		Roles:           roles,
+		Status:          status,
+		IncludeArchived: filter.IncludeArchived,
 	})
 	if err != nil {
 		return nil, utils.ErrInternal
@@ -91,8 +109,8 @@ func (s *UserService) List(ctx context.Context, filter dto.UserListFilter) (*dto
 	}
 
 	return &dto.UserListResponse{
-		Users: items,
-		Pagination: dto.PaginationResponse{
+		Items: items,
+		Meta: dto.PaginationResponse{
 			Page:       filter.Page,
 			Limit:      filter.Limit,
 			Total:      total,
@@ -120,17 +138,13 @@ func (s *UserService) Get(ctx context.Context, userID int64) (*dto.UserAdminResp
 
 // Create membuat akun staf baru tanpa password/Google, lalu memberikan role
 // assignable dalam satu transaksi.
-func (s *UserService) Create(ctx context.Context, req dto.CreateUserRequest) (*dto.UserAdminResponse, error) {
+func (s *UserService) Create(ctx context.Context, actorID int64, req dto.CreateUserRequest) (*dto.UserAdminResponse, error) {
 	name := strings.TrimSpace(req.Name)
 	if err := validateName(name); err != nil {
 		return nil, err
 	}
 	email := normalizeEmail(req.Email)
 	if err := validateEmail(email); err != nil {
-		return nil, err
-	}
-	username, err := normalizeOptionalUsername(req.Username)
-	if err != nil {
 		return nil, err
 	}
 	roles, err := s.requireAssignableRoles(req.Roles, true)
@@ -141,20 +155,12 @@ func (s *UserService) Create(ctx context.Context, req dto.CreateUserRequest) (*d
 	if exists, err := s.users.ExistsByEmail(email); err != nil {
 		return nil, utils.ErrInternal
 	} else if exists {
-		return nil, utils.ErrConflict.WithField("email", utils.FieldEmailTaken, "Email sudah terdaftar")
-	}
-	if username != nil {
-		if _, err := s.users.FindByUsername(*username); err == nil {
-			return nil, utils.ErrConflict.WithField("username", utils.FieldUsernameTaken, "Username sudah dipakai")
-		} else if !errors.Is(err, repositories.ErrNotFound) {
-			return nil, utils.ErrInternal
-		}
+		return nil, utils.ErrEmailAlreadyExists.WithField("email", utils.FieldEmailAlreadyExists, "Email sudah terdaftar")
 	}
 
 	user := &models.User{
 		Name:     name,
 		Email:    email,
-		Username: username,
 		IsActive: true,
 	}
 
@@ -167,7 +173,20 @@ func (s *UserService) Create(ctx context.Context, req dto.CreateUserRequest) (*d
 		for _, role := range roles {
 			roleIDs = append(roleIDs, role.ID)
 		}
-		return txUsers.AssignRoles(user.ID, roleIDs)
+		if err := txUsers.AssignRoles(user.ID, roleIDs); err != nil {
+			return err
+		}
+
+		snapshot, err := auditUserSnapshot(user, roles)
+		if err != nil {
+			return utils.ErrInternal
+		}
+		return s.audit.LogTx(ctx, tx, AuditEvent{
+			ActorID:  actorID,
+			TargetID: user.ID,
+			Action:   ActionAccountCreated,
+			Snapshot: snapshot,
+		})
 	})
 	if err != nil {
 		if appErr := asAppError(err); appErr != nil {
@@ -220,22 +239,50 @@ func (s *UserService) SetStatus(ctx context.Context, actorID, targetID int64, re
 			}
 			return utils.ErrInternal
 		}
-
-		if *req.IsActive {
-			return txUsers.UpdateStatus(targetID, map[string]interface{}{
-				"is_active":             true,
-				"inactive_reason":       nil,
-				"deactivated_at":        nil,
-				"failed_login_attempts": 0,
-				"failed_login_at":       nil,
-				"locked_until":          nil,
-			})
-		}
-
 		roles, err := txUsers.GetRoles(targetID)
 		if err != nil {
 			return utils.ErrInternal
 		}
+
+		if *req.IsActive && user.IsActive {
+			return utils.ErrAccountAlreadyActive
+		}
+		if !*req.IsActive && !user.IsActive {
+			return utils.ErrAccountAlreadyInactive
+		}
+		if !*req.IsActive && reason == "graduated" && !isStudent(roles) {
+			return validationError("inactive_reason", utils.FieldInvalidReason, "Alasan Lulus hanya untuk akun siswa")
+		}
+
+		if *req.IsActive {
+			if err := txUsers.UpdateStatus(targetID, map[string]interface{}{
+				"is_active":             true,
+				"inactive_reason":       nil,
+				"deactivated_at":        nil,
+				"archived_at":           nil,
+				"failed_login_attempts": 0,
+				"failed_login_at":       nil,
+				"locked_until":          nil,
+			}); err != nil {
+				return utils.ErrInternal
+			}
+
+			updated, err := txUsers.FindByID(targetID)
+			if err != nil {
+				return utils.ErrInternal
+			}
+			snapshot, err := auditUserSnapshot(updated, roles)
+			if err != nil {
+				return utils.ErrInternal
+			}
+			return s.audit.LogTx(ctx, tx, AuditEvent{
+				ActorID:  actorID,
+				TargetID: targetID,
+				Action:   ActionAccountActivated,
+				Snapshot: snapshot,
+			})
+		}
+
 		if user.IsActive && hasRole(roles, models.RoleAdmin) && countActiveAdmins(admins) <= 1 {
 			return utils.ErrLastAdmin
 		}
@@ -244,13 +291,28 @@ func (s *UserService) SetStatus(ctx context.Context, actorID, targetID int64, re
 			"is_active":       false,
 			"inactive_reason": reason,
 			"deactivated_at":  now,
+			"archived_at":     nil,
 		}); err != nil {
 			return utils.ErrInternal
 		}
 		if _, err := s.sessions.WithTx(tx).RevokeAllForUser(targetID, now); err != nil {
 			return utils.ErrInternal
 		}
-		return nil
+
+		updated, err := txUsers.FindByID(targetID)
+		if err != nil {
+			return utils.ErrInternal
+		}
+		snapshot, err := auditUserSnapshot(updated, roles)
+		if err != nil {
+			return utils.ErrInternal
+		}
+		return s.audit.LogTx(ctx, tx, AuditEvent{
+			ActorID:  actorID,
+			TargetID: targetID,
+			Action:   ActionAccountDeactivated,
+			Snapshot: snapshot,
+		})
 	})
 	if err != nil {
 		if appErr := asAppError(err); appErr != nil {
@@ -285,7 +347,8 @@ func (s *UserService) ReplaceRoles(ctx context.Context, actorID, targetID int64,
 		if err != nil {
 			return utils.ErrInternal
 		}
-		if _, err := txUsers.FindByIDForUpdate(targetID); err != nil {
+		target, err := txUsers.FindByIDForUpdate(targetID)
+		if err != nil {
 			if errors.Is(err, repositories.ErrNotFound) {
 				return utils.ErrUserNotFound
 			}
@@ -296,12 +359,30 @@ func (s *UserService) ReplaceRoles(ctx context.Context, actorID, targetID int64,
 		if err != nil {
 			return utils.ErrInternal
 		}
-		targetHasAdmin := hasRole(currentRoles, models.RoleAdmin)
 
+		retainedRoles := make([]models.Role, 0, len(currentRoles))
+		currentAssignable := make([]models.Role, 0, len(currentRoles))
+		for _, role := range currentRoles {
+			if role.IsAssignable {
+				currentAssignable = append(currentAssignable, role)
+				continue
+			}
+			retainedRoles = append(retainedRoles, role)
+		}
+
+		finalRoles := append(append([]models.Role(nil), retainedRoles...), requestedRoles...)
+		if len(finalRoles) == 0 {
+			return utils.ErrInvalidRoleCombination.WithMessage("Akun harus memiliki minimal satu role").WithField("roles", utils.FieldInvalidRoleCombination, "Akun harus memiliki minimal satu role")
+		}
+		if err := validateRoleCategory(finalRoles); err != nil {
+			return err
+		}
+
+		targetHasAdmin := hasRole(currentRoles, models.RoleAdmin)
 		if actorID == targetID && targetHasAdmin && !requestedHasAdmin {
 			return utils.ErrSelfAction
 		}
-		if targetHasAdmin && !requestedHasAdmin && len(admins) <= 1 {
+		if targetHasAdmin && !requestedHasAdmin && target.IsActive && countActiveAdmins(admins) <= 1 {
 			return utils.ErrLastAdmin
 		}
 
@@ -310,7 +391,36 @@ func (s *UserService) ReplaceRoles(ctx context.Context, actorID, targetID int64,
 		}
 		// Role terkunci tidak pernah dihapus oleh DeleteAssignableRoles, jadi
 		// cukup menambahkan role assignable yang diminta.
-		return txUsers.AssignRoles(targetID, requestedIDs)
+		if err := txUsers.AssignRoles(targetID, requestedIDs); err != nil {
+			return utils.ErrInternal
+		}
+
+		added, removed := diffRoleNames(currentAssignable, requestedRoles)
+		snapshot, err := auditRolesSnapshot(target, currentRoles, finalRoles)
+		if err != nil {
+			return utils.ErrInternal
+		}
+		if len(removed) > 0 {
+			if err := s.audit.LogTx(ctx, tx, AuditEvent{
+				ActorID:  actorID,
+				TargetID: targetID,
+				Action:   ActionRoleRevoked,
+				Snapshot: snapshot,
+			}); err != nil {
+				return err
+			}
+		}
+		if len(added) > 0 {
+			if err := s.audit.LogTx(ctx, tx, AuditEvent{
+				ActorID:  actorID,
+				TargetID: targetID,
+				Action:   ActionRoleAssigned,
+				Snapshot: snapshot,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		if appErr := asAppError(err); appErr != nil {
@@ -322,17 +432,13 @@ func (s *UserService) ReplaceRoles(ctx context.Context, actorID, targetID int64,
 	return s.Get(ctx, targetID)
 }
 
-// Update memperbarui name/email/username dengan optimistic locking updated_at.
+// Update memperbarui name/email dengan optimistic locking opsional updated_at.
 // Akun siswa tidak boleh diubah lewat endpoint ini.
-func (s *UserService) Update(ctx context.Context, targetID int64, req dto.UpdateUserRequest) (*dto.UserAdminResponse, error) {
-	if req.UpdatedAt == nil {
-		return nil, validationError("updated_at", utils.FieldRequired, "updated_at wajib diisi")
-	}
-
+func (s *UserService) Update(ctx context.Context, actorID, targetID int64, req dto.UpdateUserRequest) (*dto.UserAdminResponse, error) {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txUsers := s.users.WithTx(tx)
 
-		user, err := txUsers.FindByID(targetID)
+		user, err := txUsers.FindByIDForUpdate(targetID)
 		if err != nil {
 			if errors.Is(err, repositories.ErrNotFound) {
 				return utils.ErrUserNotFound
@@ -344,16 +450,23 @@ func (s *UserService) Update(ctx context.Context, targetID int64, req dto.Update
 			return utils.ErrInternal
 		}
 		if isStudent(roles) {
-			return validationError("id", utils.FieldStudentLocked, "Akun siswa tidak dapat diubah lewat manajemen akun")
+			return utils.ErrAccountTypeNotEditable.WithField("id", utils.FieldAccountTypeNotEditable, "Data akun siswa dikelola di Data Master Siswa")
 		}
 
+		if req.UpdatedAt != nil && !req.UpdatedAt.Equal(user.UpdatedAt) {
+			return utils.ErrStaleData
+		}
+
+		before := auditUserSnapshotData(user, roles)
 		updates := make(map[string]interface{})
 		if req.Name != nil {
 			name := strings.TrimSpace(*req.Name)
 			if err := validateName(name); err != nil {
 				return err
 			}
-			updates["name"] = name
+			if name != user.Name {
+				updates["name"] = name
+			}
 		}
 		if req.Email != nil {
 			email := normalizeEmail(*req.Email)
@@ -361,31 +474,51 @@ func (s *UserService) Update(ctx context.Context, targetID int64, req dto.Update
 				return err
 			}
 			if email != user.Email {
+				exists, err := txUsers.ExistsByEmail(email)
+				if err != nil {
+					return utils.ErrInternal
+				}
+				if exists {
+					return utils.ErrEmailAlreadyExists.WithField("email", utils.FieldEmailAlreadyExists, "Email sudah terdaftar")
+				}
 				updates["email"] = email
 				// Email berubah -> identitas Google lama tidak lagi valid.
 				updates["google_id"] = nil
 			}
 		}
-		if req.Username != nil {
-			username, err := normalizeOptionalUsername(*req.Username)
-			if err != nil {
-				return err
-			}
-			updates["username"] = username
-		}
 		if len(updates) == 0 {
-			return validationError("request", utils.FieldNoUpdateFields, "Tidak ada field yang diubah")
+			// Simpan tanpa perubahan dianggap sukses dan tidak membuat event log.
+			return nil
 		}
 		updates["updated_at"] = s.now()
 
-		rows, err := txUsers.UpdateProfile(targetID, *req.UpdatedAt, updates)
+		expectedUpdatedAt := user.UpdatedAt
+		if req.UpdatedAt != nil {
+			expectedUpdatedAt = *req.UpdatedAt
+		}
+		rows, err := txUsers.UpdateProfile(targetID, expectedUpdatedAt, updates)
 		if err != nil {
 			return err
 		}
 		if rows == 0 {
 			return utils.ErrStaleData
 		}
-		return nil
+
+		updated, err := txUsers.FindByID(targetID)
+		if err != nil {
+			return utils.ErrInternal
+		}
+		after := auditUserSnapshotData(updated, roles)
+		snapshot, err := auditUserUpdateSnapshot(before, after)
+		if err != nil {
+			return utils.ErrInternal
+		}
+		return s.audit.LogTx(ctx, tx, AuditEvent{
+			ActorID:  actorID,
+			TargetID: targetID,
+			Action:   ActionAccountUpdated,
+			Snapshot: snapshot,
+		})
 	})
 	if err != nil {
 		if appErr := asAppError(err); appErr != nil {
@@ -414,7 +547,8 @@ func (s *UserService) Delete(ctx context.Context, actorID, targetID int64) error
 		if err != nil {
 			return utils.ErrInternal
 		}
-		if _, err := txUsers.FindByIDForUpdate(targetID); err != nil {
+		target, err := txUsers.FindByIDForUpdate(targetID)
+		if err != nil {
 			if errors.Is(err, repositories.ErrNotFound) {
 				return utils.ErrUserNotFound
 			}
@@ -426,10 +560,23 @@ func (s *UserService) Delete(ctx context.Context, actorID, targetID int64) error
 			return utils.ErrInternal
 		}
 		if isStudent(roles) {
-			return validationError("id", utils.FieldStudentLocked, "Akun siswa tidak dapat dihapus lewat manajemen akun")
+			return utils.ErrAccountTypeNotEditable.WithMessage("Akun siswa tidak dapat dihapus lewat manajemen akun").WithField("id", utils.FieldAccountTypeNotEditable, "Akun siswa tidak dapat dihapus lewat manajemen akun")
 		}
-		if hasRole(roles, models.RoleAdmin) && len(admins) <= 1 {
+		if target.IsActive && hasRole(roles, models.RoleAdmin) && countActiveAdmins(admins) <= 1 {
 			return utils.ErrLastAdmin
+		}
+
+		snapshot, err := auditUserSnapshot(target, roles)
+		if err != nil {
+			return utils.ErrInternal
+		}
+		if err := s.audit.LogTx(ctx, tx, AuditEvent{
+			ActorID:  actorID,
+			TargetID: targetID,
+			Action:   ActionAccountDeleted,
+			Snapshot: snapshot,
+		}); err != nil {
+			return err
 		}
 
 		rows, err := txUsers.Delete(targetID)
@@ -459,7 +606,7 @@ func (s *UserService) requireAssignableRoles(names []string, requireOne bool) ([
 	normalized := normalizeRoleNames(names)
 	if len(normalized) == 0 {
 		if requireOne {
-			return nil, validationError("roles", utils.FieldRequired, "roles minimal berisi satu role")
+			return nil, utils.ErrInvalidRoleCombination.WithMessage("Akun harus memiliki minimal satu role").WithField("roles", utils.FieldInvalidRoleCombination, "Akun harus memiliki minimal satu role")
 		}
 		return []models.Role{}, nil
 	}
@@ -473,7 +620,7 @@ func (s *UserService) requireAssignableRoles(names []string, requireOne bool) ([
 	}
 	for _, role := range roles {
 		if !role.IsAssignable {
-			return nil, validationError("roles", utils.FieldRoleNotAssignable, "Role "+role.Name+" tidak dapat diberikan lewat endpoint ini")
+			return nil, utils.ErrRoleNotAssignable.WithField("roles", utils.FieldRoleNotAssignable, "Role "+role.Name+" tidak dapat diberikan lewat endpoint ini")
 		}
 	}
 	return roles, nil
@@ -497,18 +644,6 @@ func normalizeRoleNames(names []string) []string {
 // normalizeEmail menormalkan email ke lowercase tanpa spasi tepi.
 func normalizeEmail(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
-}
-
-// normalizeOptionalUsername mengembalikan nil untuk string kosong.
-func normalizeOptionalUsername(value string) (*string, error) {
-	username := strings.ToLower(strings.TrimSpace(value))
-	if username == "" {
-		return nil, nil
-	}
-	if !utils.IsValidUsername(username) {
-		return nil, validationError("username", utils.FieldInvalidUsername, "Username 3-30 karakter, hanya huruf kecil, angka, titik, dan underscore")
-	}
-	return &username, nil
 }
 
 // validateName memvalidasi nama setelah trim.
@@ -566,11 +701,9 @@ func mapUserWriteError(err error) *utils.AppError {
 	}
 	switch pgErr.ConstraintName {
 	case "uq_users_email_lower":
-		return utils.ErrConflict.WithField("email", utils.FieldEmailTaken, "Email sudah terdaftar")
-	case "uq_users_username":
-		return utils.ErrConflict.WithField("username", utils.FieldUsernameTaken, "Username sudah dipakai")
+		return utils.ErrEmailAlreadyExists.WithField("email", utils.FieldEmailAlreadyExists, "Email sudah terdaftar")
 	default:
-		return utils.ErrConflict.WithMessage("Email atau username sudah dipakai")
+		return utils.ErrConflict.WithMessage("Email sudah terdaftar")
 	}
 }
 
@@ -602,6 +735,68 @@ func isStudent(roles []models.Role) bool {
 	return false
 }
 
+// validateRoleCategory menerapkan aturan kombinasi role PRD Bagian 2.C:
+// staf dan siswa tidak boleh dicampur, dan siswa_inti membutuhkan siswa.
+func validateRoleCategory(roles []models.Role) error {
+	hasStaff := false
+	hasStudent := false
+	hasSiswa := false
+	hasSiswaInti := false
+	for _, role := range roles {
+		switch role.Category {
+		case "staff":
+			hasStaff = true
+		case "student":
+			hasStudent = true
+		}
+		switch role.Name {
+		case models.RoleSiswa:
+			hasSiswa = true
+		case models.RoleSiswaInti:
+			hasSiswaInti = true
+		}
+	}
+	if hasStaff && hasStudent {
+		return utils.ErrInvalidRoleCombination.WithField("roles", utils.FieldInvalidRoleCombination, "Role staf dan siswa tidak boleh dicampur")
+	}
+	if hasSiswaInti && !hasSiswa {
+		return utils.ErrInvalidRoleCombination.WithField("roles", utils.FieldInvalidRoleCombination, "Role siswa_inti hanya boleh diberikan bersama role siswa")
+	}
+	return nil
+}
+
+// roleNameList mengembalikan nama role sesuai urutan input.
+func roleNameList(roles []models.Role) []string {
+	names := make([]string, 0, len(roles))
+	for _, role := range roles {
+		names = append(names, role.Name)
+	}
+	return names
+}
+
+// diffRoleNames menghitung role yang ditambahkan/dicabut, berdasarkan nama.
+func diffRoleNames(before, after []models.Role) (added, removed []string) {
+	beforeSet := make(map[string]bool, len(before))
+	afterSet := make(map[string]bool, len(after))
+	for _, role := range before {
+		beforeSet[role.Name] = true
+	}
+	for _, role := range after {
+		afterSet[role.Name] = true
+	}
+	for _, role := range after {
+		if !beforeSet[role.Name] {
+			added = append(added, role.Name)
+		}
+	}
+	for _, role := range before {
+		if !afterSet[role.Name] {
+			removed = append(removed, role.Name)
+		}
+	}
+	return added, removed
+}
+
 // countActiveAdmins menghitung Admin aktif dari baris yang sudah dikunci.
 func countActiveAdmins(admins []repositories.AdminLock) int {
 	count := 0
@@ -631,12 +826,12 @@ func toUserAdminResponse(user *models.User, roles []models.Role) dto.UserAdminRe
 		ID:             user.ID,
 		Name:           user.Name,
 		Email:          user.Email,
-		Username:       user.Username,
 		NISN:           user.NISN,
 		AvatarURL:      user.AvatarURL,
 		IsActive:       user.IsActive,
 		InactiveReason: user.InactiveReason,
 		DeactivatedAt:  user.DeactivatedAt,
+		ArchivedAt:     user.ArchivedAt,
 		CreatedAt:      user.CreatedAt,
 		UpdatedAt:      user.UpdatedAt,
 		Roles:          roleItems,

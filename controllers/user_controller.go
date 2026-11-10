@@ -37,7 +37,7 @@ func (h *UserController) List(c *gin.Context) {
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, utils.CodeSuccess, "Daftar user berhasil diambil", result)
+	utils.SuccessResponse(c, http.StatusOK, utils.CodeUserList, "Daftar akun berhasil diambil", result)
 }
 
 // Get menangani GET /api/v1/users/{id}.
@@ -53,24 +53,29 @@ func (h *UserController) Get(c *gin.Context) {
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, utils.CodeSuccess, "Detail user berhasil diambil", result)
+	utils.SuccessResponse(c, http.StatusOK, utils.CodeSuccess, "Detail akun berhasil diambil", result)
 }
 
 // Create menangani POST /api/v1/users.
 func (h *UserController) Create(c *gin.Context) {
+	actorID, ok := currentActorID(c)
+	if !ok {
+		return
+	}
+
 	var req dto.CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(utils.NewValidationError(utils.FormatValidationErrors(err)))
 		return
 	}
 
-	result, err := h.users.Create(c.Request.Context(), req)
+	result, err := h.users.Create(c.Request.Context(), actorID, req)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusCreated, utils.CodeCreated, "User berhasil dibuat", result)
+	utils.SuccessResponse(c, http.StatusCreated, utils.CodeCreated, "Akun berhasil dibuat", result)
 }
 
 // SetStatus menangani PATCH /api/v1/users/{id}/status.
@@ -96,7 +101,7 @@ func (h *UserController) SetStatus(c *gin.Context) {
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, utils.CodeSuccess, "Status user berhasil diperbarui", result)
+	utils.SuccessResponse(c, http.StatusOK, utils.CodeSuccess, "Status akun berhasil diperbarui", result)
 }
 
 // ReplaceRoles menangani PUT /api/v1/users/{id}/roles.
@@ -130,11 +135,15 @@ func (h *UserController) ReplaceRoles(c *gin.Context) {
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, utils.CodeSuccess, "Role user berhasil diperbarui", result)
+	utils.SuccessResponse(c, http.StatusOK, utils.CodeSuccess, "Role akun berhasil diperbarui", result)
 }
 
 // Update menangani PATCH /api/v1/users/{id}.
 func (h *UserController) Update(c *gin.Context) {
+	actorID, ok := currentActorID(c)
+	if !ok {
+		return
+	}
 	userID, ok := parseUserID(c)
 	if !ok {
 		return
@@ -146,13 +155,13 @@ func (h *UserController) Update(c *gin.Context) {
 		return
 	}
 
-	result, err := h.users.Update(c.Request.Context(), userID, req)
+	result, err := h.users.Update(c.Request.Context(), actorID, userID, req)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, utils.CodeSuccess, "User berhasil diperbarui", result)
+	utils.SuccessResponse(c, http.StatusOK, utils.CodeSuccess, "Akun berhasil diperbarui", result)
 }
 
 // Delete menangani DELETE /api/v1/users/{id}.
@@ -171,7 +180,7 @@ func (h *UserController) Delete(c *gin.Context) {
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, utils.CodeSuccess, "User berhasil dihapus", nil)
+	utils.SuccessResponse(c, http.StatusOK, utils.CodeSuccess, "Akun berhasil dihapus", nil)
 }
 
 // parseUserListFilter membaca query GET /users dengan default page=1, limit=20.
@@ -192,16 +201,39 @@ func parseUserListFilter(c *gin.Context) (dto.UserListFilter, error) {
 		}})
 	}
 
+	includeArchived, err := parseBoolQuery(c, "include_archived", false)
+	if err != nil {
+		return dto.UserListFilter{}, err
+	}
+
 	roles := append([]string(nil), c.QueryArray("role[]")...)
 	roles = append(roles, c.QueryArray("role")...)
 
 	return dto.UserListFilter{
-		Page:   page,
-		Limit:  limit,
-		Q:      strings.TrimSpace(c.Query("q")),
-		Roles:  roles,
-		Status: strings.ToLower(strings.TrimSpace(c.Query("status"))),
+		Page:            page,
+		Limit:           limit,
+		Q:               strings.TrimSpace(c.Query("q")),
+		Roles:           roles,
+		Status:          strings.ToLower(strings.TrimSpace(c.Query("status"))),
+		IncludeArchived: includeArchived,
 	}, nil
+}
+
+// parseBoolQuery membaca query boolean. Nilai kosong memakai fallback.
+func parseBoolQuery(c *gin.Context, key string, fallback bool) (bool, error) {
+	raw := strings.TrimSpace(c.Query(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, utils.NewValidationError([]utils.FieldError{{
+			Field:   key,
+			Code:    utils.FieldInvalidBoolean,
+			Message: key + " harus bernilai true atau false",
+		}})
+	}
+	return value, nil
 }
 
 // parsePositiveQueryInt membaca query integer positif dengan fallback default.

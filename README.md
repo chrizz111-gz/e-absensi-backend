@@ -268,12 +268,12 @@ Tersedia di prefix **`/api/v1`**:
 
 - `GET /roles` (`role.assign`) dan `GET /permissions/matrix` (`permission.view`) — read-only RBAC.
 - CRUD user admin:
-  - `GET /users` — pagination (`page`, `limit`), pencarian `q` (escape `%`/`_`), filter `role[]` dan `status`, urut default `name A-Z`.
+  - `GET /users` — pagination (`page`, `limit`), pencarian `q` pada nama/email/NISN (escape `%`/`_`), filter `role[]`, `status`, dan `include_archived`, urut default `name A-Z`. Response memakai `data.items` + `data.meta`.
   - `GET /users/{id}` — detail user + role.
-  - `POST /users` — buat akun staf tanpa password; `roles[]` hanya role `is_assignable=true`.
-  - `PATCH /users/{id}/status` — aktif/nonaktif; nonaktif wajib `inactive_reason`, mencabut semua sesi, tidak boleh menonaktifkan diri sendiri/Admin aktif terakhir.
-  - `PUT /users/{id}/roles` — ganti role assignable, role terkunci (`wali_kelas`, `siswa_inti`, `siswa`) dipertahankan.
-  - `PATCH /users/{id}` — ubah nama/email/username dengan optimistic locking `updated_at`; email berubah mengosongkan `google_id`.
+  - `POST /users` — buat akun staf tanpa password; hanya menerima `name`, `email`, dan `roles[]`; `roles[]` hanya role `assignable=true`.
+  - `PATCH /users/{id}/status` — aktif/nonaktif; nonaktif wajib `inactive_reason`, mencabut semua sesi, tidak boleh menonaktifkan diri sendiri/Admin aktif terakhir, dan menolak status yang sama dengan `409 ACCOUNT_ALREADY_ACTIVE`/`ACCOUNT_ALREADY_INACTIVE`.
+  - `PUT /users/{id}/roles` — ganti role assignable, role terkunci (`wali_kelas`, `siswa_inti`, `siswa`) dipertahankan; kombinasi tidak valid memakai `422 INVALID_ROLE_COMBINATION`.
+  - `PATCH /users/{id}` — ubah nama/email; `updated_at` opsional untuk optimistic locking; email berubah mengosongkan `google_id`; simpan tanpa perubahan tetap sukses tanpa event baru.
   - `DELETE /users/{id}` — hanya akun staf, bukan diri sendiri/Admin terakhir, dan menolak akun yang masih punya riwayat data.
 
 Semua endpoint `/users` wajib **Bearer token + role `admin` + permission granular** (`account.view`, `account.create`, `account.update`, `account.set_status`, `account.delete`, `role.assign`). Response user **tidak pernah** memuat `password_hash` atau `google_id`.
@@ -281,7 +281,7 @@ Semua endpoint `/users` wajib **Bearer token + role `admin` + permission granula
 **Kontrak umum:**
 
 - **Base URL (lokal):** `http://localhost:8080`
-- Semua response memakai envelope `{ success, code, message, data }` (+ `errors[]` saat `VALIDATION_ERROR`/`CONFLICT`).
+- Semua response memakai envelope `{ success, code, message, data }` (+ `errors[]` saat error validasi/konflik).
 - `errors[]` berbentuk objek `{ field, code, message }`, bukan array string.
 - Branching di frontend **wajib** memakai field `code`, bukan `message`.
 - Detail endpoint, status HTTP, dan kode error: lihat **[ENDPOINTS.md](ENDPOINTS.md)**.
@@ -323,34 +323,36 @@ Daftar skenario untuk memverifikasi Epic 1 & 2 secara manual (PowerShell). Kolom
 | 27 | Konfirmasi beda | `confirm_password` ≠ `new_password` | 422 `VALIDATION_ERROR` + `PASSWORD_MISMATCH` | ⬜ belum diuji ulang |
 | 28 | Password sama | password baru = password lama | 400 `AUTH_PASSWORD_SAME` | ⬜ belum diuji ulang |
 | 29 | Reset token dipakai 2× | `POST /change-password/confirm` dengan token yang sama | 401 `AUTH_RESET_TOKEN_INVALID` | ⬜ belum diuji ulang |
-| 30 | Daftar role | `GET /roles` dengan token Admin | 200 `SUCCESS`, data `roles[]` + `is_assignable` | ✅ 200, 7 role |
+| 30 | Daftar role | `GET /roles` dengan token Admin | 200 `SUCCESS`, data `roles[]` + `assignable` | ✅ 200, 7 role |
 | 31 | Matriks permission | `GET /permissions/matrix` dengan token Admin | 200 `SUCCESS`, data `roles`, `permissions`, `grants` | ✅ 200, 7 permission/7 grant |
 | 32 | Default deny | `GET /roles` dengan token siswa | 403 `FORBIDDEN` | ✅ 403 `FORBIDDEN` |
-| 33 | Tanpa token | `GET /roles` tanpa header Bearer | 401 `AUTH_UNAUTHORIZED` | ✅ 401 `AUTH_UNAUTHORIZED` |
-| 34 | Daftar user (Admin) | `GET /users` dengan token Admin | 200 `SUCCESS`, `data.users` + `pagination` default `page=1`, `limit=20` | ✅ 200 `SUCCESS` |
+| 33 | Tanpa token | `GET /roles` tanpa header Bearer | 401 `UNAUTHORIZED` | ✅ 401 `UNAUTHORIZED` |
+| 34 | Daftar user (Admin) | `GET /users` dengan token Admin | 200 `USER_LIST`, `data.items` + `data.meta` default `page=1`, `limit=20` | ✅ 200 `USER_LIST` |
 | 35 | Urutan default | `GET /users` | Nama terurut A–Z | ✅ `Budi Santoso` → `Phase Three Admin` |
 | 36 | Escape wildcard `q` | `GET /users?q=%25` dan `?q=_` | Hanya mencocokkan karakter literal `%`/`_` | ✅ masing-masing 1 user |
 | 37 | Filter role & status | `GET /users?role[]=guru_mapel&status=active` | 200, hanya user dengan role/status tersebut | ✅ 200 |
-| 38 | Validasi query | `?page=0`, `?limit=101`, `?status=deleted` | 422 `VALIDATION_ERROR` | ✅ 422 |
+| 38 | Validasi query | `?page=0`, `?limit=101`, `?status=deleted`, role tidak dikenal | 422 `VALIDATION_ERROR` | ✅ 422 |
 | 39 | Detail user | `GET /users/{id}` | 200, `data` `UserAdminResponse` + `roles[]` | ✅ 200 |
 | 40 | Buat akun staf | `POST /users` (`roles: ["guru_mapel"]`) | 201 `CREATED`, `password_hash=NULL`, `is_active=true` | ✅ 201 |
-| 41 | Email duplikat (create) | `POST /users` dengan email terdaftar | 409 `CONFLICT` + `EMAIL_TAKEN` | ✅ 409 |
+| 41 | Email duplikat (create) | `POST /users` dengan email terdaftar | 409 `EMAIL_ALREADY_EXISTS` | ✅ 409 |
 | 42 | Role terkunci (create) | `POST /users` (`roles: ["wali_kelas"]`) | 422 `ROLE_NOT_ASSIGNABLE` | ✅ 422 |
-| 43 | Ubah profil | `PATCH /users/{id}` dengan `updated_at` terbaru | 200 `SUCCESS` | ✅ 200 |
+| 43 | Ubah profil | `PATCH /users/{id}` dengan/tanpa `updated_at` | 200 `SUCCESS` | ✅ 200 |
 | 44 | Optimistic locking | `PATCH /users/{id}` dengan `updated_at` lama | 409 `STALE_DATA` | ✅ 409 |
 | 45 | Email berubah → Google dicabut | `PATCH /users/{id}` email baru | `google_id` di DB menjadi `NULL` | ✅ `NULL` |
-| 46 | Email duplikat (update) | `PATCH /users/{id}` email milik user lain | 409 `CONFLICT` + `EMAIL_TAKEN` | ✅ 409 |
+| 46 | Email duplikat (update) | `PATCH /users/{id}` email milik user lain | 409 `EMAIL_ALREADY_EXISTS` | ✅ 409 |
 | 47 | Email tidak valid | `PATCH /users/{id}` email rusak | 422 `INVALID_EMAIL` | ✅ 422 |
 | 48 | Ganti role + role terkunci | `PUT /users/{id}/roles` pada user ber-role `wali_kelas` | 200, `wali_kelas` tetap ada | ✅ `waka_kurikulum,wali_kelas` |
 | 49 | Nonaktif + cabut sesi | `PATCH /users/{id}/status` `is_active=false` | 200; semua sesi user `revoked_at` terisi; refresh lama 401 | ✅ 0 sesi aktif |
 | 50 | Aktifkan kembali | `PATCH /users/{id}/status` `is_active=true` | 200; `inactive_reason`/`deactivated_at` NULL, `failed_login_attempts=0` | ✅ |
 | 51 | Reason wajib/valid | `is_active=false` tanpa/`inactive_reason` salah | 422 `FIELD_REQUIRED` / `INVALID_INACTIVE_REASON` | ✅ 422 |
-| 52 | Akun siswa dikunci | `PATCH`/`DELETE /users/{id}` target siswa | 422 `STUDENT_ACCOUNT_LOCKED` | ✅ 422 |
+| 52 | Akun siswa dikunci | `PATCH`/`DELETE /users/{id}` target siswa | 422 `ACCOUNT_TYPE_NOT_EDITABLE` | ✅ 422 |
 | 53 | Aksi pada diri sendiri | `DELETE`/`PATCH status`/cabut admin sendiri | 403 `SELF_ACTION_FORBIDDEN` | ✅ 403 |
 | 54 | Non-admin | `GET /users` dengan token siswa | 403 `FORBIDDEN` | ✅ 403 |
 | 55 | Hapus akun staf | `DELETE /users/{id}` | 200 `SUCCESS` | ✅ 200 |
 | 56 | Hapus akun berriwayat | `DELETE` user yang direferensikan tabel riwayat | 409 `ACCOUNT_HAS_HISTORY` | ✅ 409 |
-| 57 | Tanpa token (users) | `GET /users` tanpa header Bearer | 401 `AUTH_UNAUTHORIZED` | ✅ 401 |
+| 57 | Tanpa token (users) | `GET /users` tanpa header Bearer | 401 `UNAUTHORIZED` | ✅ 401 |
+| 58 | Status sudah sama | `PATCH status` nonaktif lagi / aktif lagi | 409 `ACCOUNT_ALREADY_INACTIVE` / `ACCOUNT_ALREADY_ACTIVE` | ✅ 409 |
+| 59 | Role kosong/tidak valid | `PUT /users/{id}/roles` `[]` atau campur staf+siswa | 422 `INVALID_ROLE_COMBINATION` | ✅ 422 |
 
 > **Belum diuji (butuh kredensial eksternal, bukan bug):** jalur **sukses** Google Sign-In (perlu `GOOGLE_CLIENT_ID` + `id_token` asli) dan pengiriman email via **SMTP asli** (selama `SMTP_HOST` kosong, OTP dicetak ke konsol).
 
@@ -369,16 +371,16 @@ Daftar skenario untuk memverifikasi Epic 1 & 2 secara manual (PowerShell). Kolom
 - Alur ganti/reset password: `request` → `verify-otp` (dapat `reset_token`) → `confirm`/`reset` (kirim `reset_token` + `new_password` + `confirm_password`).
 - `reset_token` berumur pendek dan **sekali pakai**; minta OTP baru otomatis membatalkan token lama.
 - Response OTP menyertakan `attempts_remaining`, `expires_at`, dan `retry_after_seconds` (saat cooldown).
-- Field error menyebut nama kolom: contoh `{ "field": "email", "code": "EMAIL_TAKEN", "message": "..." }`.
+- Field error menyebut nama kolom: contoh `{ "field": "email", "code": "EMAIL_ALREADY_EXISTS", "message": "..." }` untuk manajemen akun; registrasi memakai `EMAIL_TAKEN`.
 - `confirm_password` wajib pada register, change password, dan reset password; nilainya harus sama dengan password baru.
 - `GET /roles` dan `GET /permissions/matrix` wajib Bearer token; masing-masing membutuhkan permission `role.assign` dan `permission.view`. Jangan hanya menyembunyikan menu di UI — server tetap menolak dengan `403 FORBIDDEN` bila permission tidak ada.
 - Semua endpoint `/api/v1/users` wajib **Bearer token + role `admin`**. UI Admin sebaiknya tetap menyembunyikan aksi yang tidak diizinkan, tetapi server adalah sumber kebenaran.
 - Response user **tidak pernah** memuat `password_hash` atau `google_id`. `POST /users` membuat akun staf tanpa password; jangan mengirim field password ke endpoint tersebut.
-- Payload `roles` memakai **nama role** (contoh `guru_mapel`), bukan `id`. Hanya role dengan `is_assignable: true` yang boleh dikirim. Role terkunci (`wali_kelas`, `siswa_inti`, `siswa`) dipertahankan otomatis saat `PUT /users/{id}/roles`.
-- `PATCH /users/{id}` wajib mengirim `updated_at` persis dari response detail. Bila menerima `409 STALE_DATA`, GET ulang detail lalu ulangi perubahan — jangan retry dengan `updated_at` lama.
-- Menonaktifkan akun mencabut seluruh sesinya; user tersebut akan menerima `401 AUTH_ACCOUNT_INACTIVE` pada request berikutnya. Aktivasi mereset alasan nonaktif dan counter login gagal.
+- Payload `roles` memakai **nama role** (contoh `guru_mapel`), bukan `id`. Hanya role dengan `assignable: true` yang boleh dikirim. Role terkunci (`wali_kelas`, `siswa_inti`, `siswa`) dipertahankan otomatis saat `PUT /users/{id}/roles`.
+- `PATCH /users/{id}` menerima `updated_at` **opsional** dari response detail. Bila dikirim dan sudah tidak cocok, server membalas `409 STALE_DATA`; GET ulang detail lalu ulangi perubahan — jangan retry dengan `updated_at` lama.
+- Menonaktifkan akun mencabut seluruh sesinya; user tersebut akan menerima `401 UNAUTHORIZED` pada request berikutnya. Aktivasi mereset alasan nonaktif dan counter login gagal.
 - Aksi pada akun sendiri (`DELETE`, ubah status, cabut role Admin sendiri) ditolak `403 SELF_ACTION_FORBIDDEN`. Penghapusan akun yang masih punya riwayat data ditolak `409 ACCOUNT_HAS_HISTORY`.
-- `GET /users` mendukung `q` (nama/email/username), `role[]` (nama role, boleh lebih dari satu), `status=active|inactive`, `page`, dan `limit`. Karakter `%`/`_` pada `q` dicari sebagai teks literal.
+- `GET /users` mendukung `q` (nama/email/NISN), `role[]` (nama role, boleh lebih dari satu), `status=active|inactive`, `include_archived`, `page`, dan `limit`. Karakter `%`/`_` pada `q` dicari sebagai teks literal. Akun terarsip disembunyikan secara default.
 
 **Mobile & Desktop**
 - Simpan token di secure storage platform.

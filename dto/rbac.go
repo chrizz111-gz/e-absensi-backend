@@ -6,7 +6,7 @@ type RoleResponse struct {
 	Name         string  `json:"name"`
 	Label        string  `json:"label"`
 	Category     string  `json:"category"`
-	IsAssignable bool    `json:"is_assignable"`
+	IsAssignable bool    `json:"assignable"`
 	Description  *string `json:"description,omitempty"`
 }
 

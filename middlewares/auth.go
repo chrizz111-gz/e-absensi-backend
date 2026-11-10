@@ -48,7 +48,7 @@ func AuthRequired(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		if !user.IsActive {
-			utils.AbortWithError(c, http.StatusUnauthorized, utils.CodeAccountInactive, "Akun tidak aktif, hubungi admin")
+			utils.AbortWithError(c, http.StatusUnauthorized, utils.CodeUnauthorized, "Akun tidak aktif, hubungi admin")
 			return
 		}
 

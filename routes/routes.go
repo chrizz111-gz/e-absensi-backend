@@ -44,7 +44,7 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB) {
 	passwordService := services.NewPasswordService(db, otpService)
 	otpController := controllers.NewOTPController(otpService, passwordService)
 	rbacController := controllers.NewRBACController(db)
-	userService := services.NewUserService(db)
+	userService := services.NewUserService(db, services.NewAuditLogger())
 	userController := controllers.NewUserController(userService)
 
 	// Epic 2: endpoint read-only RBAC. Wajib login; permission dicek dari
