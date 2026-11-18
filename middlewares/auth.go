@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -19,12 +20,20 @@ const (
 	ContextRolesKey = "auth_roles"
 )
 
+// authUserLoader memisahkan middleware dari GORM agar bisa diuji dengan fake.
+type authUserLoader interface {
+	FindByID(id int64) (*models.User, error)
+	GetRoles(userID int64) ([]models.Role, error)
+}
+
 // AuthRequired memverifikasi access token pada header Authorization, lalu
 // memuat ULANG user dan seluruh role (union) dari database. Otorisasi tidak
 // pernah mempercayai klaim role dari token/frontend (F1.8).
 func AuthRequired(db *gorm.DB) gin.HandlerFunc {
-	users := repositories.NewUserRepository(db)
+	return authRequired(repositories.NewUserRepository(db))
+}
 
+func authRequired(users authUserLoader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token, ok := bearerToken(c)
 		if !ok {
@@ -51,6 +60,10 @@ func AuthRequired(db *gorm.DB) gin.HandlerFunc {
 			utils.AbortWithError(c, http.StatusUnauthorized, utils.CodeUnauthorized, "Akun tidak aktif, hubungi admin")
 			return
 		}
+		if isTokenBeforePasswordChange(claims, user.PasswordChangedAt) {
+			utils.AbortWithError(c, http.StatusUnauthorized, utils.CodeSessionRevoked, "Sesi tidak valid atau telah berakhir")
+			return
+		}
 
 		roles, err := users.GetRoles(user.ID)
 		if err != nil {
@@ -62,6 +75,18 @@ func AuthRequired(db *gorm.DB) gin.HandlerFunc {
 		c.Set(ContextRolesKey, roleNameList(roles))
 		c.Next()
 	}
+}
+
+// isTokenBeforePasswordChange mengembalikan true bila access token diterbitkan
+// sebelum waktu perubahan password terakhir (sehingga sesi lama harus ditolak).
+func isTokenBeforePasswordChange(claims *utils.Claims, passwordChangedAt *time.Time) bool {
+	if passwordChangedAt == nil {
+		return false
+	}
+	if claims == nil || claims.IssuedAt == nil {
+		return true
+	}
+	return claims.IssuedAt.Time.Before(*passwordChangedAt)
 }
 
 // bearerToken mengekstrak token dari header "Authorization: Bearer <token>".

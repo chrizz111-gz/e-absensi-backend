@@ -29,9 +29,22 @@ type ForgotPasswordRequest struct {
 }
 
 // GoogleLoginRequest adalah payload login/daftar via Google Sign-In (F1.3).
+// NISN dan Name opsional: bila email belum terdaftar dan NISN diisi, akun
+// siswa baru langsung dibuat menggunakan identitas Google tersebut.
 type GoogleLoginRequest struct {
 	IDToken    string `json:"id_token" binding:"required"`
+	NISN       string `json:"nisn" binding:"omitempty,nisn"`
+	Name       string `json:"name" binding:"omitempty,min=2,max=150"`
 	DeviceInfo string `json:"device_info" binding:"omitempty,max=255"`
+}
+
+// GoogleProfileData dikembalikan pada error 404 saat email Google belum
+// terdaftar, sehingga frontend dapat meng-auto-fill nama & email pada form
+// registrasi siswa.
+type GoogleProfileData struct {
+	Email     string `json:"email"`
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatar_url,omitempty"`
 }
 
 // OTPRequestedResponse dikembalikan saat OTP berhasil dibuat/dikirim ulang.

@@ -51,13 +51,15 @@ func (s *OTPService) RequestChangePasswordOTP(ctx context.Context, userID int64)
 	return s.send(user, models.PurposeChangePassword)
 }
 
-// RequestResetPasswordOTP mengirim OTP reset password. Bersifat "silent":
-// keberadaan email tidak dibocorkan - selalu sukses dari sudut pemanggil.
+// RequestResetPasswordOTP mengirim OTP reset password. Keberadaan email tidak
+// dibocorkan (NotFound tetap mengembalikan hasil sintetis), namun error
+// cooldown/rate-limit tetap dikembalikan agar proteksi brute-force berjalan.
 func (s *OTPService) RequestResetPasswordOTP(ctx context.Context, email string) (*OTPIssueResult, error) {
 	user, err := s.users.FindByEmail(email)
 	if err != nil {
 		if !errors.Is(err, repositories.ErrNotFound) {
 			log.Printf("otp: gagal mencari user untuk reset (%s): %v", email, err)
+			return nil, utils.ErrInternal
 		}
 		return s.syntheticIssueResult(), nil
 	}
@@ -65,7 +67,7 @@ func (s *OTPService) RequestResetPasswordOTP(ctx context.Context, email string) 
 	result, err := s.send(user, models.PurposeResetPassword)
 	if err != nil {
 		log.Printf("otp: gagal mengirim OTP reset untuk %s: %v", email, err)
-		return s.syntheticIssueResult(), nil
+		return nil, err
 	}
 	return result, nil
 }

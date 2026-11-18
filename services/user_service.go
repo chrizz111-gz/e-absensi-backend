@@ -453,7 +453,10 @@ func (s *UserService) Update(ctx context.Context, actorID, targetID int64, req d
 			return utils.ErrAccountTypeNotEditable.WithField("id", utils.FieldAccountTypeNotEditable, "Data akun siswa dikelola di Data Master Siswa")
 		}
 
-		if req.UpdatedAt != nil && !req.UpdatedAt.Equal(user.UpdatedAt) {
+		if req.UpdatedAt == nil {
+			return validationError("updated_at", utils.FieldRequired, "updated_at wajib diisi")
+		}
+		if !sameTimestamp(*req.UpdatedAt, user.UpdatedAt) {
 			return utils.ErrStaleData
 		}
 
@@ -492,11 +495,7 @@ func (s *UserService) Update(ctx context.Context, actorID, targetID int64, req d
 		}
 		updates["updated_at"] = s.now()
 
-		expectedUpdatedAt := user.UpdatedAt
-		if req.UpdatedAt != nil {
-			expectedUpdatedAt = *req.UpdatedAt
-		}
-		rows, err := txUsers.UpdateProfile(targetID, expectedUpdatedAt, updates)
+		rows, err := txUsers.UpdateProfile(targetID, user.UpdatedAt, updates)
 		if err != nil {
 			return err
 		}
@@ -795,6 +794,12 @@ func diffRoleNames(before, after []models.Role) (added, removed []string) {
 		}
 	}
 	return added, removed
+}
+
+// sameTimestamp membandingkan dua timestamp pada presisi mikrodetik (presisi
+// timestamptz PostgreSQL) untuk optimistic locking.
+func sameTimestamp(a, b time.Time) bool {
+	return a.UTC().Truncate(time.Microsecond).Equal(b.UTC().Truncate(time.Microsecond))
 }
 
 // countActiveAdmins menghitung Admin aktif dari baris yang sudah dikunci.

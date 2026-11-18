@@ -26,8 +26,10 @@ func (RolePermission) TableName() string {
 	return "role_permissions"
 }
 
-// Kode permission Epic 2. Nilai ini harus sama dengan seed pada migrasi 004.
+// Kode permission Epic 2, Epic 3, dan Epic 4. Nilai ini harus sama dengan seed
+// pada migrasi 004 dan 017.
 const (
+	// Epic 2 - User & Role Management
 	PermissionAccountView      = "account.view"
 	PermissionAccountCreate    = "account.create"
 	PermissionAccountUpdate    = "account.update"
@@ -35,4 +37,31 @@ const (
 	PermissionAccountDelete    = "account.delete"
 	PermissionRoleAssign       = "role.assign"
 	PermissionPermissionView   = "permission.view"
+
+	// Epic 3 - Master Data Management
+	PermissionStudentView        = "student.view"
+	PermissionStudentUpdate      = "student.update"
+	PermissionTeacherView        = "teacher.view"
+	PermissionTeacherCreate      = "teacher.create"
+	PermissionTeacherUpdate      = "teacher.update"
+	PermissionClassView          = "class.view"
+	PermissionClassCreate        = "class.create"
+	PermissionClassUpdate        = "class.update"
+	PermissionClassDelete        = "class.delete"
+	PermissionSubjectView        = "subject.view"
+	PermissionSubjectCreate      = "subject.create"
+	PermissionSubjectUpdate      = "subject.update"
+	PermissionSubjectDelete      = "subject.delete"
+	PermissionAcademicYearView   = "academic_year.view"
+	PermissionAcademicYearCreate = "academic_year.create"
+	PermissionAcademicYearUpdate = "academic_year.update"
+	PermissionAcademicYearDelete = "academic_year.delete"
+
+	// Epic 4 - Schedule Management
+	PermissionScheduleDownloadTemplate = "schedule.download_template"
+	PermissionScheduleImport           = "schedule.import"
+	PermissionScheduleView             = "schedule.view"
+	PermissionScheduleUpdate           = "schedule.update"
+	PermissionScheduleDelete           = "schedule.delete"
+	PermissionScheduleConvertActivity  = "schedule.convert_activity"
 )

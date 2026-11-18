@@ -93,6 +93,30 @@ var (
 	ErrInvalidRoleCombination = NewAppError(http.StatusUnprocessableEntity, CodeInvalidRoleCombination, "Kombinasi role tidak valid")
 	ErrAccountTypeNotEditable = NewAppError(http.StatusUnprocessableEntity, CodeAccountTypeNotEditable, "Data akun siswa dikelola di Data Master Siswa")
 
+	// Epic 3 - Master Data Management
+	ErrAcademicYearNotFound      = NewAppError(http.StatusNotFound, CodeAcademicYearNotFound, "Tahun ajaran tidak ditemukan")
+	ErrAcademicYearInUse         = NewAppError(http.StatusConflict, CodeAcademicYearInUse, "Tahun ajaran tidak dapat dihapus karena sudah memiliki data kelas terkait")
+	ErrAcademicYearAlreadyExists = NewAppError(http.StatusConflict, CodeAcademicYearAlreadyExists, "Nama tahun ajaran sudah terdaftar")
+	ErrSubjectNotFound           = NewAppError(http.StatusNotFound, CodeSubjectNotFound, "Mata pelajaran tidak ditemukan")
+	ErrSubjectInUse              = NewAppError(http.StatusConflict, CodeSubjectInUse, "Mata pelajaran tidak dapat dihapus karena sedang digunakan. Silakan nonaktifkan (is_active = false) mata pelajaran ini")
+	ErrSubjectAlreadyExists      = NewAppError(http.StatusConflict, CodeSubjectAlreadyExists, "Kode mata pelajaran sudah terdaftar")
+	ErrClassNotFound             = NewAppError(http.StatusNotFound, CodeClassNotFound, "Kelas tidak ditemukan")
+	ErrClassInUse                = NewAppError(http.StatusConflict, CodeClassInUse, "Kelas tidak dapat dihapus karena masih memiliki siswa atau jadwal terkait. Silakan nonaktifkan (is_active = false) kelas ini")
+	ErrClassAlreadyExists        = NewAppError(http.StatusConflict, CodeClassAlreadyExists, "Nama kelas sudah terdaftar pada tahun ajaran ini")
+	ErrTeacherNotFound           = NewAppError(http.StatusNotFound, CodeTeacherNotFound, "Data guru tidak ditemukan")
+	ErrTeacherAlreadyExists      = NewAppError(http.StatusConflict, CodeTeacherAlreadyExists, "Akun ini sudah memiliki profil guru")
+	ErrAccountNotTeacherRole     = NewAppError(http.StatusUnprocessableEntity, CodeAccountNotTeacherRole, "Akun yang dipilih harus memiliki role guru_mapel")
+	ErrStudentNotFound           = NewAppError(http.StatusNotFound, CodeStudentNotFound, "Data siswa tidak ditemukan")
+
+	// Epic 4 - Schedule Management
+	ErrImportFileInvalid       = NewAppError(http.StatusUnprocessableEntity, CodeImportFileInvalid, "File Excel tidak valid atau format kolom tidak sesuai template")
+	ErrImportNotValidated      = NewAppError(http.StatusUnprocessableEntity, CodeImportNotValidated, "Token import tidak valid atau telah kedaluwarsa, silakan ulangi preview")
+	ErrScheduleNotFound        = NewAppError(http.StatusNotFound, CodeScheduleNotFound, "Jadwal tidak ditemukan")
+	ErrScheduleSlotConflict    = NewAppError(http.StatusConflict, CodeScheduleSlotConflict, "Jadwal bentrok pada kelas atau guru di tanggal dan jam tersebut")
+	ErrScheduleAlreadyActivity = NewAppError(http.StatusConflict, CodeScheduleAlreadyActivity, "Jadwal ini sudah berstatus kegiatan")
+	ErrScheduleAlreadyLesson   = NewAppError(http.StatusConflict, CodeScheduleAlreadyLesson, "Jadwal ini sudah berstatus pelajaran")
+	ErrScheduleInUse           = NewAppError(http.StatusConflict, CodeScheduleInUse, "Jadwal tidak dapat diubah atau dihapus karena sudah memiliki data absensi atau jurnal terkait")
+
 	ErrOTPInvalid       = NewAppError(http.StatusBadRequest, CodeOTPInvalid, "Kode OTP salah")
 	ErrOTPExpired       = NewAppError(http.StatusBadRequest, CodeOTPExpired, "Kode OTP sudah kedaluwarsa, silakan minta kode baru")
 	ErrOTPTooMany       = NewAppError(http.StatusTooManyRequests, CodeOTPTooMany, "Terlalu banyak percobaan OTP, silakan minta kode baru")

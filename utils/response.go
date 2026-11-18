@@ -26,6 +26,30 @@ const (
 	CodeInvalidRoleCombination = "INVALID_ROLE_COMBINATION"
 	CodeAccountTypeNotEditable = "ACCOUNT_TYPE_NOT_EDITABLE"
 
+	// Epic 3 - Master Data Management
+	CodeAcademicYearNotFound      = "ACADEMIC_YEAR_NOT_FOUND"
+	CodeAcademicYearInUse         = "ACADEMIC_YEAR_IN_USE"
+	CodeAcademicYearAlreadyExists = "ACADEMIC_YEAR_ALREADY_EXISTS"
+	CodeSubjectNotFound           = "SUBJECT_NOT_FOUND"
+	CodeSubjectInUse              = "SUBJECT_IN_USE"
+	CodeSubjectAlreadyExists      = "SUBJECT_ALREADY_EXISTS"
+	CodeClassNotFound             = "CLASS_NOT_FOUND"
+	CodeClassInUse                = "CLASS_IN_USE"
+	CodeClassAlreadyExists        = "CLASS_ALREADY_EXISTS"
+	CodeTeacherNotFound           = "TEACHER_NOT_FOUND"
+	CodeTeacherAlreadyExists      = "TEACHER_PROFILE_ALREADY_EXISTS"
+	CodeAccountNotTeacherRole     = "ACCOUNT_NOT_TEACHER_ROLE"
+	CodeStudentNotFound           = "STUDENT_NOT_FOUND"
+
+	// Epic 4 - Schedule Management
+	CodeImportFileInvalid       = "IMPORT_FILE_INVALID"
+	CodeImportNotValidated      = "IMPORT_NOT_VALIDATED"
+	CodeScheduleNotFound        = "SCHEDULE_NOT_FOUND"
+	CodeScheduleSlotConflict    = "SCHEDULE_SLOT_CONFLICT"
+	CodeScheduleAlreadyActivity = "SCHEDULE_ALREADY_ACTIVITY"
+	CodeScheduleAlreadyLesson   = "SCHEDULE_ALREADY_LESSON"
+	CodeScheduleInUse           = "SCHEDULE_IN_USE"
+
 	CodeRegisterSuccess = "AUTH_REGISTER_SUCCESS"
 	CodeLoginSuccess    = "AUTH_LOGIN_SUCCESS"
 	CodeLogoutSuccess   = "AUTH_LOGOUT_SUCCESS"
@@ -82,6 +106,15 @@ const (
 	FieldInvalidRoleCombination = "INVALID_ROLE_COMBINATION"
 	FieldAccountTypeNotEditable = "ACCOUNT_TYPE_NOT_EDITABLE"
 	FieldInvalidBoolean         = "INVALID_BOOLEAN"
+	FieldInvalidDate            = "INVALID_DATE"
+	FieldInvalidTime            = "INVALID_TIME"
+	FieldInvalidTimeRange       = "INVALID_TIME_RANGE"
+	FieldInvalidDateRange       = "INVALID_DATE_RANGE"
+	FieldInvalidSemester        = "INVALID_SEMESTER"
+	FieldInvalidGradeLevel      = "INVALID_GRADE_LEVEL"
+	FieldInvalidScheduleType    = "INVALID_SCHEDULE_TYPE"
+	FieldSubjectInactive        = "SUBJECT_INACTIVE"
+	FieldClassInactive          = "CLASS_INACTIVE"
 )
 
 // APIResponse adalah envelope standar seluruh endpoint.

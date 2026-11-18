@@ -55,7 +55,7 @@ func (h *AuthController) Login(c *gin.Context) {
 	utils.SuccessResponse(c, http.StatusOK, utils.CodeLoginSuccess, "Login berhasil", result)
 }
 
-// GoogleLogin menangani POST /api/v1/auth/google (F1.3 - login via Google).
+// GoogleLogin menangani POST /api/v1/auth/google (F1.3 - login & registrasi siswa via Google).
 func (h *AuthController) GoogleLogin(c *gin.Context) {
 	var req dto.GoogleLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -63,7 +63,7 @@ func (h *AuthController) GoogleLogin(c *gin.Context) {
 		return
 	}
 
-	result, err := h.auth.GoogleLogin(c.Request.Context(), req.IDToken, clientMeta(c, req.DeviceInfo))
+	result, err := h.auth.GoogleLoginWithInput(c.Request.Context(), req, clientMeta(c, req.DeviceInfo))
 	if err != nil {
 		c.Error(err)
 		return

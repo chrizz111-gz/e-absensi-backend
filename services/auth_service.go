@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"e-absensi-backend/config"
 	"e-absensi-backend/dto"
@@ -48,7 +50,7 @@ func NewAuthService(db *gorm.DB, google utils.GoogleVerifier) *AuthService {
 }
 
 // RegisterStudent mendaftarkan akun siswa baru (F1.1). Satu transaksi:
-// simpan users + user_roles (role "siswa"). Email/NISN/username harus unik.
+// simpan users + user_roles (role "siswa") + students. Email/NISN/username harus unik.
 func (s *AuthService) RegisterStudent(ctx context.Context, req dto.RegisterStudentRequest) (*dto.UserResponse, error) {
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	nisn := strings.TrimSpace(req.NISN)
@@ -103,9 +105,22 @@ func (s *AuthService) RegisterStudent(ctx context.Context, req dto.RegisterStude
 		if err := txUsers.Create(user); err != nil {
 			return err
 		}
-		return txUsers.AssignRole(user.ID, roleSiswa.ID)
+		if err := txUsers.AssignRole(user.ID, roleSiswa.ID); err != nil {
+			return err
+		}
+		student := models.Student{
+			UserID: user.ID,
+			NISN:   nisn,
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}},
+			DoNothing: true,
+		}).Create(&student).Error
 	})
 	if err != nil {
+		if mapped := mapRegisterWriteError(err); mapped != nil {
+			return nil, mapped
+		}
 		return nil, utils.ErrInternal
 	}
 
@@ -166,16 +181,26 @@ func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest, meta Clie
 	return s.issueSession(ctx, user, roles, meta, now)
 }
 
-// GoogleLogin memproses login via Google Sign-In (F1.3). Alur:
+// GoogleLogin memproses login via Google Sign-In (F1.3) hanya dengan idToken.
+func (s *AuthService) GoogleLogin(ctx context.Context, idToken string, meta ClientMeta) (*dto.AuthResponse, error) {
+	return s.GoogleLoginWithInput(ctx, dto.GoogleLoginRequest{
+		IDToken:    idToken,
+		DeviceInfo: meta.DeviceInfo,
+	}, meta)
+}
+
+// GoogleLoginWithInput memproses login & registrasi mandiri siswa via Google Sign-In (F1.3).
+// Alur:
 //   - akun dengan google_id cocok -> langsung login;
 //   - belum ada -> dikaitkan ke akun yang emailnya sama (email harus terverifikasi);
-//   - email belum terdaftar -> minta registrasi dulu (tidak auto-create).
-func (s *AuthService) GoogleLogin(ctx context.Context, idToken string, meta ClientMeta) (*dto.AuthResponse, error) {
+//   - email belum terdaftar & NISN dikirim -> registrasi siswa baru (auto-fill nama & email);
+//   - email belum terdaftar & NISN kosong -> kembalikan 404 beserta data profil Google.
+func (s *AuthService) GoogleLoginWithInput(ctx context.Context, req dto.GoogleLoginRequest, meta ClientMeta) (*dto.AuthResponse, error) {
 	if s.google == nil {
 		return nil, utils.ErrGoogleDisabled
 	}
 
-	claims, err := s.google.Verify(ctx, idToken)
+	claims, err := s.google.Verify(ctx, req.IDToken)
 	if err != nil {
 		return nil, utils.ErrGoogleTokenInvalid
 	}
@@ -190,22 +215,46 @@ func (s *AuthService) GoogleLogin(ctx context.Context, idToken string, meta Clie
 		return nil, utils.ErrInternal
 	}
 
+	needLink := false
 	if errors.Is(err, repositories.ErrNotFound) {
 		user, err = s.users.FindByEmail(claims.Email)
 		if err != nil {
 			if errors.Is(err, repositories.ErrNotFound) {
-				return nil, utils.ErrAccountNotFound
+				nisn := strings.TrimSpace(req.NISN)
+				if nisn == "" {
+					return nil, utils.ErrAccountNotFound.WithData(dto.GoogleProfileData{
+						Email:     strings.ToLower(strings.TrimSpace(claims.Email)),
+						Name:      strings.TrimSpace(claims.Name),
+						AvatarURL: strings.TrimSpace(claims.Picture),
+					})
+				}
+				return s.registerGoogleStudent(ctx, claims, req, meta, now)
 			}
 			return nil, utils.ErrInternal
 		}
+		needLink = true
+	}
+
+	if !user.IsActive {
+		return nil, utils.ErrAccountInactive
+	}
+
+	if IsLocked(user, now) {
+		return nil, utils.ErrAccountLocked.WithMessage(lockMessage(user, now))
+	}
+
+	if needLink {
 		// Email sudah terdaftar: kaitkan akun Google ke user tersebut.
 		if err := s.users.LinkGoogleIdentity(user.ID, claims.Subject, claims.Picture); err != nil {
 			return nil, utils.ErrInternal
 		}
 	}
 
-	if !user.IsActive {
-		return nil, utils.ErrAccountInactive
+	if user.FailedLoginAttempts > 0 || user.FailedLoginAt != nil || user.LockedUntil != nil {
+		if err := s.users.ResetLoginFailure(user.ID); err != nil {
+			return nil, utils.ErrInternal
+		}
+		ResetLockout(user)
 	}
 
 	roles, err := s.users.GetRoles(user.ID)
@@ -214,6 +263,74 @@ func (s *AuthService) GoogleLogin(ctx context.Context, idToken string, meta Clie
 	}
 
 	return s.issueSession(ctx, user, roles, meta, now)
+}
+
+// registerGoogleStudent membuat akun siswa baru dari klaim Google + NISN,
+// membuat profil students, lalu langsung menerbitkan sesi login.
+func (s *AuthService) registerGoogleStudent(ctx context.Context, claims *utils.GoogleClaims, req dto.GoogleLoginRequest, meta ClientMeta, now time.Time) (*dto.AuthResponse, error) {
+	nisn := strings.TrimSpace(req.NISN)
+	nisnExists, err := s.users.ExistsByNISN(nisn)
+	if err != nil {
+		return nil, utils.ErrInternal
+	}
+	if nisnExists {
+		return nil, utils.ErrConflict.WithField("nisn", utils.FieldNISNTaken, "NISN sudah terdaftar")
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = strings.TrimSpace(claims.Name)
+	}
+	if len([]rune(name)) < 2 {
+		name = strings.Split(claims.Email, "@")[0]
+	}
+
+	email := strings.ToLower(strings.TrimSpace(claims.Email))
+	googleID := claims.Subject
+	var avatarURL *string
+	if pic := strings.TrimSpace(claims.Picture); pic != "" {
+		avatarURL = &pic
+	}
+
+	roleSiswa, err := s.roles.FindByName(models.RoleSiswa)
+	if err != nil {
+		return nil, utils.ErrInternal
+	}
+
+	user := &models.User{
+		Name:      name,
+		Email:     email,
+		NISN:      &nisn,
+		GoogleID:  &googleID,
+		AvatarURL: avatarURL,
+		IsActive:  true,
+	}
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txUsers := s.users.WithTx(tx)
+		if err := txUsers.Create(user); err != nil {
+			return err
+		}
+		if err := txUsers.AssignRole(user.ID, roleSiswa.ID); err != nil {
+			return err
+		}
+		student := models.Student{
+			UserID: user.ID,
+			NISN:   nisn,
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}},
+			DoNothing: true,
+		}).Create(&student).Error
+	})
+	if err != nil {
+		if mapped := mapRegisterWriteError(err); mapped != nil {
+			return nil, mapped
+		}
+		return nil, utils.ErrInternal
+	}
+
+	return s.issueSession(ctx, user, []models.Role{*roleSiswa}, meta, now)
 }
 
 // Refresh menukar refresh token dengan pasangan token baru (rotasi). Token lama
@@ -331,6 +448,25 @@ func (s *AuthService) issueSession(ctx context.Context, user *models.User, roles
 		TokenType:    "Bearer",
 		ExpiresIn:    int(utils.AccessTokenTTL().Seconds()),
 	}, nil
+}
+
+// mapRegisterWriteError memetakan unique violation PostgreSQL saat registrasi
+// ke 409 Conflict yang spesifik per field.
+func mapRegisterWriteError(err error) *utils.AppError {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return nil
+	}
+	switch pgErr.ConstraintName {
+	case "uq_users_email_lower":
+		return utils.ErrConflict.WithField("email", utils.FieldEmailTaken, "Email sudah terdaftar")
+	case "uq_users_nisn", "uq_students_nisn":
+		return utils.ErrConflict.WithField("nisn", utils.FieldNISNTaken, "NISN sudah terdaftar")
+	case "uq_users_username":
+		return utils.ErrConflict.WithField("username", utils.FieldUsernameTaken, "Username sudah dipakai")
+	default:
+		return utils.ErrConflict
+	}
 }
 
 // lockMessage menyusun pesan sisa waktu lock (minimal 1 menit).

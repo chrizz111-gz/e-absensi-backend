@@ -77,10 +77,9 @@ type UpdateUserRolesRequest struct {
 }
 
 // UpdateUserRequest adalah payload PATCH /users/{id}. Field yang tidak dikirim
-// tidak diubah. UpdatedAt opsional; bila diisi, nilainya harus sama dengan
-// updated_at terakhir dari GET detail untuk optimistic locking.
+// tidak diubah. UpdatedAt wajib diisi untuk optimistic locking.
 type UpdateUserRequest struct {
 	Name      *string    `json:"name"`
 	Email     *string    `json:"email"`
-	UpdatedAt *time.Time `json:"updated_at"`
+	UpdatedAt *time.Time `json:"updated_at" binding:"required"`
 }
