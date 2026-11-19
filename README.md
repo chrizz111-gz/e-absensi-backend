@@ -2,7 +2,7 @@
 
 Backend REST API untuk sistem **E-Absensi** sekolah. Dibangun dengan **Go + Gin + GORM + PostgreSQL**.
 
-**Epic 1 — Authentication & Account** tersedia (registrasi, login, sesi/JWT, OTP, ganti/reset password, Google Sign-In, otorisasi role, rate limit). **Epic 2 — User & Role Management** selesai, meliputi fondasi RBAC (permission middleware, daftar role, matriks hak akses) dan CRUD user/role Fase 3 (daftar, detail, buat akun staf, status aktif/nonaktif, ganti role, ubah profil, hapus akun).
+**Epic 1 — Authentication & Account** tersedia (registrasi, login, sesi/JWT, OTP, ganti/reset password, Google Sign-In + registrasi siswa via Google, otorisasi role, rate limit). **Epic 2 — User & Role Management** selesai, meliputi fondasi RBAC (permission middleware, daftar role, matriks hak akses) dan CRUD user/role Fase 3. **Epic 3 — Master Data Management** selesai (Tahun Ajaran, Mata Pelajaran, Kelas, Data Guru, Data Siswa). **Epic 4 — Schedule Management** selesai (Download Template Excel, Preview & Confirm Import Jadwal, Lihat Jadwal dengan scoping per role, Ubah Jadwal, Konversi Kegiatan Sekolah, Hapus Jadwal).
 
 > Dokumen ini ditujukan terutama untuk **tim frontend (Mobile, Web, Desktop)**. Berisi cara menjalankan server, konfigurasi, skenario uji, dan catatan integrasi. Untuk **kontrak API lengkap** (endpoint, kode error, role), lihat **[ENDPOINTS.md](ENDPOINTS.md)**.
 
@@ -18,6 +18,8 @@ Backend REST API untuk sistem **E-Absensi** sekolah. Dibangun dengan **Go + Gin 
 - [Dokumentasi API per Epic](#dokumentasi-api-per-epic)
   - [Epic 1 — Authentication & Account](#epic-1--authentication--account)
   - [Epic 2 — User & Role Management](#epic-2--user--role-management)
+  - [Epic 3 — Master Data Management](#epic-3--master-data-management)
+  - [Epic 4 — Schedule Management](#epic-4--schedule-management)
 - [Skenario Uji Manual](#skenario-uji-manual)
 - [Catatan untuk Tim Frontend](#catatan-untuk-tim-frontend)
 - [Konfigurasi CORS](#konfigurasi-cors)
@@ -27,15 +29,15 @@ Backend REST API untuk sistem **E-Absensi** sekolah. Dibangun dengan **Go + Gin 
 
 ## Tech Stack
 
-| Komponen | Teknologi |
-|---|---|
-| Bahasa | Go 1.26 |
-| Web framework | Gin |
-| ORM | GORM |
-| Database | PostgreSQL 18 |
-| Auth | JWT (HS256), refresh token dengan rotasi |
-| Password hashing | bcrypt |
-| Google Sign-In | `google.golang.org/api/idtoken` |
+| Komponen         | Teknologi                                |
+| ---------------- | ---------------------------------------- |
+| Bahasa           | Go 1.26                                  |
+| Web framework    | Gin                                      |
+| ORM              | GORM                                     |
+| Database         | PostgreSQL 18                            |
+| Auth             | JWT (HS256), refresh token dengan rotasi |
+| Password hashing | bcrypt                                   |
+| Google Sign-In   | `google.golang.org/api/idtoken`          |
 
 Arsitektur: **Controller → Service → Repository** (routing tipis, logika di service, query di repository).
 
@@ -99,7 +101,6 @@ psql -U <user> -h 127.0.0.1 -d absensi -f database\sql\004_epic2_user_role_manag
 > `005` hanya menyinkronkan komentar tabel OTP, tidak mengubah struktur.
 > `004_epic2_user_role_management.sql` menambahkan metadata role, tabel `permissions`/`role_permissions`, dan seed 7 permission Epic 2.
 > Untuk DB yang sudah berjalan, jalankan **hanya file baru** yang belum pernah diterapkan.
-
 
 ### 2. Konfigurasi `.env`
 
@@ -213,35 +214,35 @@ Call Post "/api/v1/auth/logout-all" @{} $tok
 
 ## Environment Variables
 
-| Variabel | Default | Keterangan |
-|---|---|---|
-| `APP_ENV` | `development` | `development` atau `production` |
-| `APP_PORT` | `8080` | Port HTTP server |
-| `DB_USER` | — | User PostgreSQL |
-| `DB_PASSWORD` | — | Password PostgreSQL |
-| `DB_HOST` | — | Host DB (mis. `127.0.0.1`) |
-| `DB_PORT` | — | Port DB (mis. `5432`) |
-| `DB_NAME` | — | Nama database (`absensi`) |
-| `DB_SSLMODE` | — | Umumnya `disable` untuk lokal |
-| `JWT_SECRET` | — | Secret access token |
-| `JWT_REFRESH_SECRET` | — | Secret refresh token |
-| `JWT_ACCESS_TTL` | `15m` | Masa berlaku access token |
-| `JWT_REFRESH_TTL` | `168h` | Masa berlaku refresh token (7 hari) |
-| `GOOGLE_CLIENT_ID` | _(kosong)_ | Client ID OAuth Google. **Kosong = fitur Google Sign-In nonaktif** |
-| `SMTP_HOST` | _(kosong)_ | Host SMTP. **Kosong = OTP di-log ke konsol (mode dev)** |
-| `SMTP_PORT` | `2525` | Port SMTP |
-| `SMTP_USER` | _(kosong)_ | User SMTP |
-| `SMTP_PASS` | _(kosong)_ | Password SMTP |
-| `SMTP_FROM` | `E-Absensi <no-reply@...>` | Alamat pengirim |
-| `OTP_LENGTH` | `6` | Panjang OTP dalam karakter (4–10), charset `A-Z` + `2-9` |
-| `OTP_TTL` | `5m` | Masa berlaku kode OTP |
-| `OTP_RESEND_COOLDOWN` | `60s` | Jeda minimum sebelum kirim ulang OTP |
-| `OTP_MAX_RESEND_PER_HOUR` | `5` | Batas jumlah pengiriman OTP per jam |
-| `OTP_MAX_ATTEMPTS` | `5` | Maks percobaan salah sebelum kode hangus |
-| `PASSWORD_RESET_TOKEN_TTL` | `10m` | Umur reset token setelah OTP diverifikasi |
-| `RATE_LIMIT_RPS` | `5` | Rate limit per-IP (request/detik). `0` = nonaktif |
-| `RATE_LIMIT_BURST` | `10` | Burst rate limit per-IP |
-| `CORS_ALLOWED_ORIGINS` | _(kosong)_ | Daftar origin web yang diizinkan (dipisah koma). Kosong = default dev (React `:3000` & `:5173`). Lihat [Konfigurasi CORS](#konfigurasi-cors) |
+| Variabel                   | Default                    | Keterangan                                                                                                                                   |
+| -------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_ENV`                  | `development`              | `development` atau `production`                                                                                                              |
+| `APP_PORT`                 | `8080`                     | Port HTTP server                                                                                                                             |
+| `DB_USER`                  | —                          | User PostgreSQL                                                                                                                              |
+| `DB_PASSWORD`              | —                          | Password PostgreSQL                                                                                                                          |
+| `DB_HOST`                  | —                          | Host DB (mis. `127.0.0.1`)                                                                                                                   |
+| `DB_PORT`                  | —                          | Port DB (mis. `5432`)                                                                                                                        |
+| `DB_NAME`                  | —                          | Nama database (`absensi`)                                                                                                                    |
+| `DB_SSLMODE`               | —                          | Umumnya `disable` untuk lokal                                                                                                                |
+| `JWT_SECRET`               | —                          | Secret access token                                                                                                                          |
+| `JWT_REFRESH_SECRET`       | —                          | Secret refresh token                                                                                                                         |
+| `JWT_ACCESS_TTL`           | `15m`                      | Masa berlaku access token                                                                                                                    |
+| `JWT_REFRESH_TTL`          | `168h`                     | Masa berlaku refresh token (7 hari)                                                                                                          |
+| `GOOGLE_CLIENT_ID`         | _(kosong)_                 | Client ID OAuth Google. **Kosong = fitur Google Sign-In nonaktif**                                                                           |
+| `SMTP_HOST`                | _(kosong)_                 | Host SMTP. **Kosong = OTP di-log ke konsol (mode dev)**                                                                                      |
+| `SMTP_PORT`                | `2525`                     | Port SMTP                                                                                                                                    |
+| `SMTP_USER`                | _(kosong)_                 | User SMTP                                                                                                                                    |
+| `SMTP_PASS`                | _(kosong)_                 | Password SMTP                                                                                                                                |
+| `SMTP_FROM`                | `E-Absensi <no-reply@...>` | Alamat pengirim                                                                                                                              |
+| `OTP_LENGTH`               | `6`                        | Panjang OTP dalam karakter (4–10), charset `A-Z` + `2-9`                                                                                     |
+| `OTP_TTL`                  | `5m`                       | Masa berlaku kode OTP                                                                                                                        |
+| `OTP_RESEND_COOLDOWN`      | `60s`                      | Jeda minimum sebelum kirim ulang OTP                                                                                                         |
+| `OTP_MAX_RESEND_PER_HOUR`  | `5`                        | Batas jumlah pengiriman OTP per jam                                                                                                          |
+| `OTP_MAX_ATTEMPTS`         | `5`                        | Maks percobaan salah sebelum kode hangus                                                                                                     |
+| `PASSWORD_RESET_TOKEN_TTL` | `10m`                      | Umur reset token setelah OTP diverifikasi                                                                                                    |
+| `RATE_LIMIT_RPS`           | `5`                        | Rate limit per-IP (request/detik). `0` = nonaktif                                                                                            |
+| `RATE_LIMIT_BURST`         | `10`                       | Burst rate limit per-IP                                                                                                                      |
+| `CORS_ALLOWED_ORIGINS`     | _(kosong)_                 | Daftar origin web yang diizinkan (dipisah koma). Kosong = default dev (React `:3000` & `:5173`). Lihat [Konfigurasi CORS](#konfigurasi-cors) |
 
 ---
 
@@ -278,6 +279,47 @@ Tersedia di prefix **`/api/v1`**:
 
 Semua endpoint `/users` wajib **Bearer token + role `admin` + permission granular** (`account.view`, `account.create`, `account.update`, `account.set_status`, `account.delete`, `role.assign`). Response user **tidak pernah** memuat `password_hash` atau `google_id`.
 
+### Epic 3 — Master Data Management
+
+Tersedia di prefix **`/api/v1`**:
+
+- **F3.5 Tahun Ajaran (`/academic-years`)**:
+  - `GET /academic-years` & `GET /academic-years/{id}` (`academic_year.view` — Admin & Waka Kurikulum).
+  - `POST /academic-years` (`academic_year.create` — **khusus Admin**; Waka Kurikulum `403`). Jika `is_active: true`, tahun ajaran lain otomatis dinonaktifkan dalam 1 transaksi.
+  - `PATCH /academic-years/{id}` (`academic_year.update` — Admin & Waka Kurikulum). Wajib menyertakan `updated_at` (_optimistic locking_).
+  - `DELETE /academic-years/{id}` (`academic_year.delete` — **khusus Admin**). Menolak dengan `409 ACADEMIC_YEAR_IN_USE` bila sudah memiliki kelas.
+- **F3.4 Mata Pelajaran (`/subjects`)**:
+  - `GET /subjects` & `GET /subjects/{id}` (`subject.view` — Admin, Waka Kurikulum, Guru Mapel).
+  - `POST /subjects` (`subject.create`), `PATCH /subjects/{id}` (`subject.update`, wajib `updated_at`), `DELETE /subjects/{id}` (`subject.delete`) — Admin & Waka Kurikulum.
+  - Jika mapel sedang dipakai guru/jadwal, `DELETE` mengembalikan `409 SUBJECT_IN_USE` dengan pesan mengarahkan untuk menonaktifkan (`is_active: false`).
+- **F3.3 Kelas (`/classes`)**:
+  - `GET /classes` & `GET /classes/{id}` (`class.view` — seluruh 7 role). Pada `GET /classes/{id}`, jika diakses oleh `siswa`/`siswa_inti` untuk kelas selain kelasnya sendiri, daftar anggota siswa (`students`) disembunyikan untuk mencegah kebocoran data.
+  - `POST /classes` (`class.create`), `PATCH /classes/{id}` (`class.update`, wajib `updated_at`), `DELETE /classes/{id}` (`class.delete`) — Admin & Waka Kurikulum.
+  - Jika kelas masih memiliki siswa/jadwal, `DELETE` mengembalikan `409 CLASS_IN_USE`.
+- **F3.2 Data Guru (`/teachers`)**:
+  - `GET /teachers/candidates` (atau `/teachers/available-users`) — helper dropdown akun ber-role `guru_mapel` yang belum punya profil guru.
+  - `GET /teachers`, `GET /teachers/{id}` (`teacher.view`), `POST /teachers` (`teacher.create`), `PATCH /teachers/{id}` (`teacher.update`, wajib `updated_at`) — Admin & Waka Kurikulum. **Tidak ada endpoint `DELETE`**.
+  - `POST /teachers` memvalidasi `user_id` harus ber-role `guru_mapel` (`422 ACCOUNT_NOT_TEACHER_ROLE`), belum memiliki profil guru (`409 TEACHER_PROFILE_ALREADY_EXISTS`), `nip` wajib diisi, dan `subject_ids` minimal 1 mapel aktif.
+- **F3.1 Data Siswa (`/students`)**:
+  - `GET /students` & `GET /students/{id}` (`student.view` — Admin, Waka Kurikulum, Waka Kesiswaan, Wali Kelas). **Server-side scoping**: untuk Wali Kelas, data otomatis dibatasi hanya siswa pada kelas tanggung jawabnya (`403 FORBIDDEN` bila mengakses siswa/kelas lain).
+  - `PATCH /students/{id}` (`student.update` — Admin & Waka Kurikulum, wajib `updated_at`). Hanya memproses whitelist (`name`, `nisn`, `class_id`, `unassign_class`) dan menyinkronkan `name` serta `nisn` ke tabel `users` dalam 1 transaksi. **Tidak ada endpoint `POST` maupun `DELETE`**.
+
+### Epic 4 — Schedule Management
+
+Tersedia di prefix **`/api/v1/schedules`** (jadwal berbasis tanggal spesifik `YYYY-MM-DD`, **tanpa endpoint tambah manual satuan**):
+
+- **F4.1 Download Template (`GET /schedules/template`)**: Khusus Admin (`schedule.download_template`, Waka Kurikulum `403`). Mengunduh file `.xlsx` dengan 6 kolom baku (`Tanggal (YYYY-MM-DD)`, `Jam Mulai (HH:MM)`, `Jam Selesai (HH:MM)`, `Nama Kelas`, `Kode Mata Pelajaran`, `Email Guru`) + 1 baris contoh.
+- **F4.2 Import Excel 2 Langkah (`POST /schedules/import/preview` & `POST /schedules/import/confirm`)**: Khusus Admin (`schedule.import`).
+  - _Preview_: Unggah `multipart/form-data` field `file` (`.xlsx`). Mengelompokkan baris menjadi `valid_rows`, `skipped_rows` (slot `class_id + date + start_time` sudah ada di DB), dan `error_rows`, serta menerbitkan `import_token` (berlaku 30 menit).
+  - _Confirm_: Kirim `{ "import_token": "..." }` untuk melakukan _batch insert_ baris valid dalam 1 transaksi (`ON CONFLICT DO NOTHING`).
+- **F4.3 Lihat Jadwal (`GET /schedules` & `GET /schedules/{id}`)**: Permission `schedule.view` (seluruh role) dengan filter `date_from`, `date_to` (default 1 minggu berjalan Senin–Minggu), `class_id`, `teacher_id`, `subject_id`, `type` (`pelajaran`|`kegiatan`).
+  - **Scoping otomatis per role**: Admin/Waka melihat seluruh sekolah; Guru Mapel dipaksa hanya `teacher_id` miliknya; Wali Kelas/Siswa Inti/Siswa dipaksa hanya `class_id` kelasnya (`403 FORBIDDEN` bila mengakses kelas lain).
+- **F4.4 Ubah Jadwal (`PATCH /schedules/{id}`)**: Admin & Waka Kurikulum (`schedule.update`). Wajib `updated_at` (`409 STALE_DATA`) dan menolak bentrok slot kelas/guru (`409 SCHEDULE_SLOT_CONFLICT`).
+- **F4.6 Konversi Kegiatan (`PATCH /schedules/{id}/convert-to-activity` & `PATCH /schedules/{id}/revert-to-lesson`)**: Admin & Waka Kurikulum (`schedule.convert_activity`).
+  - _Convert_: Wajib `activity_name` & `updated_at`, mengubah `type = "kegiatan"`, mengembalikan `subject_id: null` di response, dan tetap mempertahankan `teacher_id`.
+  - _Revert_: Mengembalikan `type = "pelajaran"` dan mengosongkan `activity_name` (menolak `409 SCHEDULE_IN_USE` bila sudah memiliki data absensi kegiatan).
+- **F4.5 Hapus Jadwal (`DELETE /schedules/{id}`)**: Khusus Admin (`schedule.delete`, Waka Kurikulum `403`). Menolak `409 SCHEDULE_IN_USE` bila jadwal sudah dipakai absensi/jurnal/kegiatan.
+
 **Kontrak umum:**
 
 - **Base URL (lokal):** `http://localhost:8080`
@@ -292,67 +334,67 @@ Semua endpoint `/users` wajib **Bearer token + role `admin` + permission granula
 
 Daftar skenario untuk memverifikasi Epic 1 & 2 secara manual (PowerShell). Kolom **Hasil**: ✅ = sudah diverifikasi pada server lokal; ⬜ = belum diuji ulang setelah perubahan terakhir.
 
-| # | Skenario | Aksi | Diharapkan | Hasil |
-|---|---|---|---|---|
-| 1 | Health check | `GET /api/status` | 200 `SUCCESS` | ✅ `SUCCESS` |
-| 2 | Registrasi baru | `POST /register` (email/NISN baru) | 201 `AUTH_REGISTER_SUCCESS`, role `siswa` | ✅ 201 `AUTH_REGISTER_SUCCESS` |
-| 3 | Registrasi duplikat | `POST /register` (email sama) | 409 `CONFLICT` | ✅ 409 `CONFLICT` |
-| 4 | Validasi field | `POST /register` (email/NISN/password tidak valid) | 422 `VALIDATION_ERROR` + `errors[]` | ✅ 422 `VALIDATION_ERROR` |
-| 5 | Login benar | `POST /login` | 200 `AUTH_LOGIN_SUCCESS` | ✅ 200 `AUTH_LOGIN_SUCCESS` |
-| 6 | Refresh (rotasi) | `POST /refresh` token valid | 200 `AUTH_REFRESH_SUCCESS`, token baru | ✅ 200 `AUTH_REFRESH_SUCCESS` |
-| 7 | Refresh token lama | `POST /refresh` token **lama** (sudah dipakai) | 401 `AUTH_SESSION_REVOKED` | ✅ 401 `AUTH_SESSION_REVOKED` |
-| 8 | Request OTP ganti pw | `POST /change-password/request` | 200 `OTP_REQUESTED`, `attempts_remaining=5`, `expires_at` | ⬜ belum diuji ulang |
-| 9 | Cooldown OTP | request lagi < 60 detik | 429 `OTP_RESEND_TOO_SOON` + `retry_after_seconds` + header `Retry-After` | ⬜ belum diuji ulang |
-| 10 | OTP salah | `POST /change-password/verify-otp` kode ngawur | 400 `OTP_INVALID` + `attempts_remaining` menurun | ⬜ belum diuji ulang |
-| 11 | OTP benar | `POST /change-password/verify-otp` kode dari konsol | 200 `OTP_VERIFIED` + `reset_token` | ⬜ belum diuji ulang |
-| 12 | Simpan password baru | `POST /change-password/confirm` dengan `reset_token` | 200 `AUTH_PASSWORD_CHANGED` | ⬜ belum diuji ulang |
-| 13 | Sesi lama dicabut | `POST /refresh` token sebelum ganti pw | 401 `AUTH_SESSION_REVOKED` | ⬜ belum diuji ulang |
-| 14 | Password lama mati | `POST /login` password lama | 401 `AUTH_INVALID_CREDENTIALS` | ⬜ belum diuji ulang |
-| 15 | Password baru jalan | `POST /login` password baru | 200 `AUTH_LOGIN_SUCCESS` | ⬜ belum diuji ulang |
-| 16 | Reset (forgot) | `POST /forgot-password` → `verify-otp` → `reset` | 200 `OTP_REQUESTED` → `OTP_VERIFIED` → `AUTH_PASSWORD_CHANGED` | ⬜ belum diuji ulang |
-| 17 | Anti-enumerasi | `POST /forgot-password` email **tak terdaftar** | 200 `OTP_REQUESTED` (tidak membocorkan) | ✅ 200 `OTP_REQUESTED` |
-| 18 | Google belum diatur | `POST /google` (`GOOGLE_CLIENT_ID` kosong) | 503 `AUTH_GOOGLE_DISABLED` | ✅ 503 `AUTH_GOOGLE_DISABLED` |
-| 19 | Logout satu device | `POST /logout` | 200 `AUTH_LOGOUT_SUCCESS` | ✅ 200 `AUTH_LOGOUT_SUCCESS` |
-| 20 | Logout semua | `POST /logout-all` | 200 `AUTH_LOGOUT_SUCCESS` | ✅ 200 `AUTH_LOGOUT_SUCCESS` |
-| 21 | Lockout akun | 5× login gagal | gagal #1–4 = 401, **#5 = 429 `AUTH_ACCOUNT_LOCKED`** | ✅ #1–4 401, #5 429 |
-| 22 | CORS origin diizinkan | `OPTIONS` dengan `Origin: http://localhost:3000` | 204 + `Access-Control-Allow-Origin` | ✅ 204 + header |
-| 23 | CORS origin terlarang | `OPTIONS` dengan `Origin: http://evil.example.com` | 403 | ✅ 403 |
-| 24 | Rate limit | 40 request cepat ke `/login` | sebagian `429 RATE_LIMITED` + `Retry-After: 60` | ✅ 11 lolos / 29 = 429, `Retry-After: 60` |
-| 25 | OTP 5× salah | salah 5× lalu coba kode benar | salah #1–4 = 400, **#5 = 429 `OTP_TOO_MANY_ATTEMPTS`**; kode benar tetap ditolak | ⬜ belum diuji ulang |
-| 26 | Password lemah | register/ganti dengan `aaaaaaaa` | 422 `VALIDATION_ERROR` + `errors[].code = PASSWORD_*` | ⬜ belum diuji ulang |
-| 27 | Konfirmasi beda | `confirm_password` ≠ `new_password` | 422 `VALIDATION_ERROR` + `PASSWORD_MISMATCH` | ⬜ belum diuji ulang |
-| 28 | Password sama | password baru = password lama | 400 `AUTH_PASSWORD_SAME` | ⬜ belum diuji ulang |
-| 29 | Reset token dipakai 2× | `POST /change-password/confirm` dengan token yang sama | 401 `AUTH_RESET_TOKEN_INVALID` | ⬜ belum diuji ulang |
-| 30 | Daftar role | `GET /roles` dengan token Admin | 200 `SUCCESS`, data `roles[]` + `assignable` | ✅ 200, 7 role |
-| 31 | Matriks permission | `GET /permissions/matrix` dengan token Admin | 200 `SUCCESS`, data `roles`, `permissions`, `grants` | ✅ 200, 7 permission/7 grant |
-| 32 | Default deny | `GET /roles` dengan token siswa | 403 `FORBIDDEN` | ✅ 403 `FORBIDDEN` |
-| 33 | Tanpa token | `GET /roles` tanpa header Bearer | 401 `UNAUTHORIZED` | ✅ 401 `UNAUTHORIZED` |
-| 34 | Daftar user (Admin) | `GET /users` dengan token Admin | 200 `USER_LIST`, `data.items` + `data.meta` default `page=1`, `limit=20` | ✅ 200 `USER_LIST` |
-| 35 | Urutan default | `GET /users` | Nama terurut A–Z | ✅ `Budi Santoso` → `Phase Three Admin` |
-| 36 | Escape wildcard `q` | `GET /users?q=%25` dan `?q=_` | Hanya mencocokkan karakter literal `%`/`_` | ✅ masing-masing 1 user |
-| 37 | Filter role & status | `GET /users?role[]=guru_mapel&status=active` | 200, hanya user dengan role/status tersebut | ✅ 200 |
-| 38 | Validasi query | `?page=0`, `?limit=101`, `?status=deleted`, role tidak dikenal | 422 `VALIDATION_ERROR` | ✅ 422 |
-| 39 | Detail user | `GET /users/{id}` | 200, `data` `UserAdminResponse` + `roles[]` | ✅ 200 |
-| 40 | Buat akun staf | `POST /users` (`roles: ["guru_mapel"]`) | 201 `CREATED`, `password_hash=NULL`, `is_active=true` | ✅ 201 |
-| 41 | Email duplikat (create) | `POST /users` dengan email terdaftar | 409 `EMAIL_ALREADY_EXISTS` | ✅ 409 |
-| 42 | Role terkunci (create) | `POST /users` (`roles: ["wali_kelas"]`) | 422 `ROLE_NOT_ASSIGNABLE` | ✅ 422 |
-| 43 | Ubah profil | `PATCH /users/{id}` dengan/tanpa `updated_at` | 200 `SUCCESS` | ✅ 200 |
-| 44 | Optimistic locking | `PATCH /users/{id}` dengan `updated_at` lama | 409 `STALE_DATA` | ✅ 409 |
-| 45 | Email berubah → Google dicabut | `PATCH /users/{id}` email baru | `google_id` di DB menjadi `NULL` | ✅ `NULL` |
-| 46 | Email duplikat (update) | `PATCH /users/{id}` email milik user lain | 409 `EMAIL_ALREADY_EXISTS` | ✅ 409 |
-| 47 | Email tidak valid | `PATCH /users/{id}` email rusak | 422 `INVALID_EMAIL` | ✅ 422 |
-| 48 | Ganti role + role terkunci | `PUT /users/{id}/roles` pada user ber-role `wali_kelas` | 200, `wali_kelas` tetap ada | ✅ `waka_kurikulum,wali_kelas` |
-| 49 | Nonaktif + cabut sesi | `PATCH /users/{id}/status` `is_active=false` | 200; semua sesi user `revoked_at` terisi; refresh lama 401 | ✅ 0 sesi aktif |
-| 50 | Aktifkan kembali | `PATCH /users/{id}/status` `is_active=true` | 200; `inactive_reason`/`deactivated_at` NULL, `failed_login_attempts=0` | ✅ |
-| 51 | Reason wajib/valid | `is_active=false` tanpa/`inactive_reason` salah | 422 `FIELD_REQUIRED` / `INVALID_INACTIVE_REASON` | ✅ 422 |
-| 52 | Akun siswa dikunci | `PATCH`/`DELETE /users/{id}` target siswa | 422 `ACCOUNT_TYPE_NOT_EDITABLE` | ✅ 422 |
-| 53 | Aksi pada diri sendiri | `DELETE`/`PATCH status`/cabut admin sendiri | 403 `SELF_ACTION_FORBIDDEN` | ✅ 403 |
-| 54 | Non-admin | `GET /users` dengan token siswa | 403 `FORBIDDEN` | ✅ 403 |
-| 55 | Hapus akun staf | `DELETE /users/{id}` | 200 `SUCCESS` | ✅ 200 |
-| 56 | Hapus akun berriwayat | `DELETE` user yang direferensikan tabel riwayat | 409 `ACCOUNT_HAS_HISTORY` | ✅ 409 |
-| 57 | Tanpa token (users) | `GET /users` tanpa header Bearer | 401 `UNAUTHORIZED` | ✅ 401 |
-| 58 | Status sudah sama | `PATCH status` nonaktif lagi / aktif lagi | 409 `ACCOUNT_ALREADY_INACTIVE` / `ACCOUNT_ALREADY_ACTIVE` | ✅ 409 |
-| 59 | Role kosong/tidak valid | `PUT /users/{id}/roles` `[]` atau campur staf+siswa | 422 `INVALID_ROLE_COMBINATION` | ✅ 422 |
+| #   | Skenario                       | Aksi                                                           | Diharapkan                                                                       | Hasil                                     |
+| --- | ------------------------------ | -------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------- |
+| 1   | Health check                   | `GET /api/status`                                              | 200 `SUCCESS`                                                                    | ✅ `SUCCESS`                              |
+| 2   | Registrasi baru                | `POST /register` (email/NISN baru)                             | 201 `AUTH_REGISTER_SUCCESS`, role `siswa`                                        | ✅ 201 `AUTH_REGISTER_SUCCESS`            |
+| 3   | Registrasi duplikat            | `POST /register` (email sama)                                  | 409 `CONFLICT`                                                                   | ✅ 409 `CONFLICT`                         |
+| 4   | Validasi field                 | `POST /register` (email/NISN/password tidak valid)             | 422 `VALIDATION_ERROR` + `errors[]`                                              | ✅ 422 `VALIDATION_ERROR`                 |
+| 5   | Login benar                    | `POST /login`                                                  | 200 `AUTH_LOGIN_SUCCESS`                                                         | ✅ 200 `AUTH_LOGIN_SUCCESS`               |
+| 6   | Refresh (rotasi)               | `POST /refresh` token valid                                    | 200 `AUTH_REFRESH_SUCCESS`, token baru                                           | ✅ 200 `AUTH_REFRESH_SUCCESS`             |
+| 7   | Refresh token lama             | `POST /refresh` token **lama** (sudah dipakai)                 | 401 `AUTH_SESSION_REVOKED`                                                       | ✅ 401 `AUTH_SESSION_REVOKED`             |
+| 8   | Request OTP ganti pw           | `POST /change-password/request`                                | 200 `OTP_REQUESTED`, `attempts_remaining=5`, `expires_at`                        | ⬜ belum diuji ulang                      |
+| 9   | Cooldown OTP                   | request lagi < 60 detik                                        | 429 `OTP_RESEND_TOO_SOON` + `retry_after_seconds` + header `Retry-After`         | ⬜ belum diuji ulang                      |
+| 10  | OTP salah                      | `POST /change-password/verify-otp` kode ngawur                 | 400 `OTP_INVALID` + `attempts_remaining` menurun                                 | ⬜ belum diuji ulang                      |
+| 11  | OTP benar                      | `POST /change-password/verify-otp` kode dari konsol            | 200 `OTP_VERIFIED` + `reset_token`                                               | ⬜ belum diuji ulang                      |
+| 12  | Simpan password baru           | `POST /change-password/confirm` dengan `reset_token`           | 200 `AUTH_PASSWORD_CHANGED`                                                      | ⬜ belum diuji ulang                      |
+| 13  | Sesi lama dicabut              | `POST /refresh` token sebelum ganti pw                         | 401 `AUTH_SESSION_REVOKED`                                                       | ⬜ belum diuji ulang                      |
+| 14  | Password lama mati             | `POST /login` password lama                                    | 401 `AUTH_INVALID_CREDENTIALS`                                                   | ⬜ belum diuji ulang                      |
+| 15  | Password baru jalan            | `POST /login` password baru                                    | 200 `AUTH_LOGIN_SUCCESS`                                                         | ⬜ belum diuji ulang                      |
+| 16  | Reset (forgot)                 | `POST /forgot-password` → `verify-otp` → `reset`               | 200 `OTP_REQUESTED` → `OTP_VERIFIED` → `AUTH_PASSWORD_CHANGED`                   | ⬜ belum diuji ulang                      |
+| 17  | Anti-enumerasi                 | `POST /forgot-password` email **tak terdaftar**                | 200 `OTP_REQUESTED` (tidak membocorkan)                                          | ✅ 200 `OTP_REQUESTED`                    |
+| 18  | Google belum diatur            | `POST /google` (`GOOGLE_CLIENT_ID` kosong)                     | 503 `AUTH_GOOGLE_DISABLED`                                                       | ✅ 503 `AUTH_GOOGLE_DISABLED`             |
+| 19  | Logout satu device             | `POST /logout`                                                 | 200 `AUTH_LOGOUT_SUCCESS`                                                        | ✅ 200 `AUTH_LOGOUT_SUCCESS`              |
+| 20  | Logout semua                   | `POST /logout-all`                                             | 200 `AUTH_LOGOUT_SUCCESS`                                                        | ✅ 200 `AUTH_LOGOUT_SUCCESS`              |
+| 21  | Lockout akun                   | 5× login gagal                                                 | gagal #1–4 = 401, **#5 = 429 `AUTH_ACCOUNT_LOCKED`**                             | ✅ #1–4 401, #5 429                       |
+| 22  | CORS origin diizinkan          | `OPTIONS` dengan `Origin: http://localhost:3000`               | 204 + `Access-Control-Allow-Origin`                                              | ✅ 204 + header                           |
+| 23  | CORS origin terlarang          | `OPTIONS` dengan `Origin: http://evil.example.com`             | 403                                                                              | ✅ 403                                    |
+| 24  | Rate limit                     | 40 request cepat ke `/login`                                   | sebagian `429 RATE_LIMITED` + `Retry-After: 60`                                  | ✅ 11 lolos / 29 = 429, `Retry-After: 60` |
+| 25  | OTP 5× salah                   | salah 5× lalu coba kode benar                                  | salah #1–4 = 400, **#5 = 429 `OTP_TOO_MANY_ATTEMPTS`**; kode benar tetap ditolak | ⬜ belum diuji ulang                      |
+| 26  | Password lemah                 | register/ganti dengan `aaaaaaaa`                               | 422 `VALIDATION_ERROR` + `errors[].code = PASSWORD_*`                            | ⬜ belum diuji ulang                      |
+| 27  | Konfirmasi beda                | `confirm_password` ≠ `new_password`                            | 422 `VALIDATION_ERROR` + `PASSWORD_MISMATCH`                                     | ⬜ belum diuji ulang                      |
+| 28  | Password sama                  | password baru = password lama                                  | 400 `AUTH_PASSWORD_SAME`                                                         | ⬜ belum diuji ulang                      |
+| 29  | Reset token dipakai 2×         | `POST /change-password/confirm` dengan token yang sama         | 401 `AUTH_RESET_TOKEN_INVALID`                                                   | ⬜ belum diuji ulang                      |
+| 30  | Daftar role                    | `GET /roles` dengan token Admin                                | 200 `SUCCESS`, data `roles[]` + `assignable`                                     | ✅ 200, 7 role                            |
+| 31  | Matriks permission             | `GET /permissions/matrix` dengan token Admin                   | 200 `SUCCESS`, data `roles`, `permissions`, `grants`                             | ✅ 200, 7 permission/7 grant              |
+| 32  | Default deny                   | `GET /roles` dengan token siswa                                | 403 `FORBIDDEN`                                                                  | ✅ 403 `FORBIDDEN`                        |
+| 33  | Tanpa token                    | `GET /roles` tanpa header Bearer                               | 401 `UNAUTHORIZED`                                                               | ✅ 401 `UNAUTHORIZED`                     |
+| 34  | Daftar user (Admin)            | `GET /users` dengan token Admin                                | 200 `USER_LIST`, `data.items` + `data.meta` default `page=1`, `limit=20`         | ✅ 200 `USER_LIST`                        |
+| 35  | Urutan default                 | `GET /users`                                                   | Nama terurut A–Z                                                                 | ✅ `Budi Santoso` → `Phase Three Admin`   |
+| 36  | Escape wildcard `q`            | `GET /users?q=%25` dan `?q=_`                                  | Hanya mencocokkan karakter literal `%`/`_`                                       | ✅ masing-masing 1 user                   |
+| 37  | Filter role & status           | `GET /users?role[]=guru_mapel&status=active`                   | 200, hanya user dengan role/status tersebut                                      | ✅ 200                                    |
+| 38  | Validasi query                 | `?page=0`, `?limit=101`, `?status=deleted`, role tidak dikenal | 422 `VALIDATION_ERROR`                                                           | ✅ 422                                    |
+| 39  | Detail user                    | `GET /users/{id}`                                              | 200, `data` `UserAdminResponse` + `roles[]`                                      | ✅ 200                                    |
+| 40  | Buat akun staf                 | `POST /users` (`roles: ["guru_mapel"]`)                        | 201 `CREATED`, `password_hash=NULL`, `is_active=true`                            | ✅ 201                                    |
+| 41  | Email duplikat (create)        | `POST /users` dengan email terdaftar                           | 409 `EMAIL_ALREADY_EXISTS`                                                       | ✅ 409                                    |
+| 42  | Role terkunci (create)         | `POST /users` (`roles: ["wali_kelas"]`)                        | 422 `ROLE_NOT_ASSIGNABLE`                                                        | ✅ 422                                    |
+| 43  | Ubah profil                    | `PATCH /users/{id}` dengan/tanpa `updated_at`                  | 200 `SUCCESS`                                                                    | ✅ 200                                    |
+| 44  | Optimistic locking             | `PATCH /users/{id}` dengan `updated_at` lama                   | 409 `STALE_DATA`                                                                 | ✅ 409                                    |
+| 45  | Email berubah → Google dicabut | `PATCH /users/{id}` email baru                                 | `google_id` di DB menjadi `NULL`                                                 | ✅ `NULL`                                 |
+| 46  | Email duplikat (update)        | `PATCH /users/{id}` email milik user lain                      | 409 `EMAIL_ALREADY_EXISTS`                                                       | ✅ 409                                    |
+| 47  | Email tidak valid              | `PATCH /users/{id}` email rusak                                | 422 `INVALID_EMAIL`                                                              | ✅ 422                                    |
+| 48  | Ganti role + role terkunci     | `PUT /users/{id}/roles` pada user ber-role `wali_kelas`        | 200, `wali_kelas` tetap ada                                                      | ✅ `waka_kurikulum,wali_kelas`            |
+| 49  | Nonaktif + cabut sesi          | `PATCH /users/{id}/status` `is_active=false`                   | 200; semua sesi user `revoked_at` terisi; refresh lama 401                       | ✅ 0 sesi aktif                           |
+| 50  | Aktifkan kembali               | `PATCH /users/{id}/status` `is_active=true`                    | 200; `inactive_reason`/`deactivated_at` NULL, `failed_login_attempts=0`          | ✅                                        |
+| 51  | Reason wajib/valid             | `is_active=false` tanpa/`inactive_reason` salah                | 422 `FIELD_REQUIRED` / `INVALID_INACTIVE_REASON`                                 | ✅ 422                                    |
+| 52  | Akun siswa dikunci             | `PATCH`/`DELETE /users/{id}` target siswa                      | 422 `ACCOUNT_TYPE_NOT_EDITABLE`                                                  | ✅ 422                                    |
+| 53  | Aksi pada diri sendiri         | `DELETE`/`PATCH status`/cabut admin sendiri                    | 403 `SELF_ACTION_FORBIDDEN`                                                      | ✅ 403                                    |
+| 54  | Non-admin                      | `GET /users` dengan token siswa                                | 403 `FORBIDDEN`                                                                  | ✅ 403                                    |
+| 55  | Hapus akun staf                | `DELETE /users/{id}`                                           | 200 `SUCCESS`                                                                    | ✅ 200                                    |
+| 56  | Hapus akun berriwayat          | `DELETE` user yang direferensikan tabel riwayat                | 409 `ACCOUNT_HAS_HISTORY`                                                        | ✅ 409                                    |
+| 57  | Tanpa token (users)            | `GET /users` tanpa header Bearer                               | 401 `UNAUTHORIZED`                                                               | ✅ 401                                    |
+| 58  | Status sudah sama              | `PATCH status` nonaktif lagi / aktif lagi                      | 409 `ACCOUNT_ALREADY_INACTIVE` / `ACCOUNT_ALREADY_ACTIVE`                        | ✅ 409                                    |
+| 59  | Role kosong/tidak valid        | `PUT /users/{id}/roles` `[]` atau campur staf+siswa            | 422 `INVALID_ROLE_COMBINATION`                                                   | ✅ 422                                    |
 
 > **Belum diuji (butuh kredensial eksternal, bukan bug):** jalur **sukses** Google Sign-In (perlu `GOOGLE_CLIENT_ID` + `id_token` asli) dan pengiriman email via **SMTP asli** (selama `SMTP_HOST` kosong, OTP dicetak ke konsol).
 
@@ -361,6 +403,7 @@ Daftar skenario untuk memverifikasi Epic 1 & 2 secara manual (PowerShell). Kolom
 ## Catatan untuk Tim Frontend
 
 **Umum**
+
 - Gunakan field `code` untuk logika percabangan.
 - Simpan `access_token` & `refresh_token` di secure storage (Keychain/Keystore, untuk web hindari `localStorage` bila memungkinkan).
 - Setiap `401 AUTH_TOKEN_EXPIRED` → panggil `/refresh` **sekali**, lalu ulangi request. Bila refresh gagal → paksa login ulang.
@@ -383,14 +426,17 @@ Daftar skenario untuk memverifikasi Epic 1 & 2 secara manual (PowerShell). Kolom
 - `GET /users` mendukung `q` (nama/email/NISN), `role[]` (nama role, boleh lebih dari satu), `status=active|inactive`, `include_archived`, `page`, dan `limit`. Karakter `%`/`_` pada `q` dicari sebagai teks literal. Akun terarsip disembunyikan secara default.
 
 **Mobile & Desktop**
+
 - Simpan token di secure storage platform.
 - Google Sign-In: gunakan SDK native (Google Sign-In Android/iOS, atau `google_sign_in`) untuk memperoleh `id_token`, lalu kirim ke `/auth/google`.
 
 **Web**
+
 - Google Sign-In: Google Identity Services (GIS) → `id_token` → `/auth/google`.
 - CORS sudah aktif. Origin dev default (React): `http://localhost:3000` (CRA) dan `http://localhost:5173` (Vite). Detail & cara ganti: lihat [Konfigurasi CORS](#konfigurasi-cors).
 
 **Windows PowerShell (pengujian manual)**
+
 - **Jangan** kirim JSON inline dengan `curl.exe -d '{...}'` di PowerShell 5.1 — tanda kutip ganda dibuang sehingga server menerima JSON rusak (`unexpected EOF` / `invalid character`). Pilih salah satu:
   - **`Invoke-RestMethod`** (paling praktis):
     ```powershell
@@ -444,13 +490,15 @@ Detail teknis: method `GET, POST, PUT, PATCH, DELETE, OPTIONS`; header `Origin, 
 - [x] **Epic 1 — Authentication & Account**
   - [x] Registrasi, login manual, sesi + refresh (rotasi)
   - [x] OTP ganti & reset password
-  - [x] Google Sign-In
-  - [x] Otorisasi role (`RequireRoles`)
+  - [x] Google Sign-In (login, auto-link staf, & registrasi siswa)
+  - [x] Otorisasi role (`RequireRoles`) & invalidasi sesi saat password berubah
   - [x] Rate limit per-IP
   - [x] CORS untuk frontend web
 - [x] **Epic 2 — User & Role Management**
   - [x] Fondasi RBAC: `RequirePermission`, `GET /roles`, `GET /permissions/matrix`
   - [x] CRUD user & role (Fase 3)
-- [ ] Epic 3 — Absensi
-- [ ] Epic 4 — Laporan & rekap
+- [x] **Epic 3 — Master Data Management**
+  - [x] Tahun Ajaran (`F3.5`), Mata Pelajaran (`F3.4`), Kelas (`F3.3`), Data Guru (`F3.2`), Data Siswa (`F3.1`)
+- [x] **Epic 4 — Schedule Management**
+  - [x] Template Excel (`F4.1`), Import 2 Langkah Preview & Confirm (`F4.2`), Lihat Jadwal & Scoping Role (`F4.3`), Ubah Jadwal (`F4.4`), Konversi Kegiatan (`F4.6`), Hapus Jadwal (`F4.5`)
 - [ ] … (total 14 Epic sesuai PRD)
