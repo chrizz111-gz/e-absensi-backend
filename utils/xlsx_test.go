@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,6 +22,10 @@ func TestBuildAndReadXLSXRoundTrip(t *testing.T) {
 	rows, err := ReadXLSX(raw)
 	require.NoError(t, err)
 	assert.Equal(t, input, rows)
+
+	// Simpan juga file fisik template_jadwal.xlsx di root project jika dapat ditulis.
+	targetPath := filepath.Join("..", "template_jadwal.xlsx")
+	_ = os.WriteFile(targetPath, raw, 0644)
 }
 
 func TestReadXLSXRejectsInvalidBytes(t *testing.T) {

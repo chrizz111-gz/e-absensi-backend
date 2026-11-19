@@ -15,6 +15,8 @@ import (
 var ErrInvalidXLSX = errors.New("file xlsx tidak valid")
 
 // BuildXLSX membuat file Excel (.xlsx) valid dari matriks baris string.
+// Baris pertama otomatis diberi style header tebal (bold) dan lebar kolom
+// disesuaikan agar langsung rapi saat dibuka di Microsoft Excel.
 func BuildXLSX(sheetName string, rows [][]string) ([]byte, error) {
 	if strings.TrimSpace(sheetName) == "" {
 		sheetName = "Sheet1"
@@ -23,22 +25,25 @@ func BuildXLSX(sheetName string, rows [][]string) ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
-	files := map[string]string{
-		"[Content_Types].xml":        xlsxContentTypesXML,
-		"_rels/.rels":                xlsxRootRelsXML,
-		"xl/workbook.xml":            xlsxWorkbookXML(sheetName),
-		"xl/_rels/workbook.xml.rels": xlsxWorkbookRelsXML,
-		"xl/styles.xml":              xlsxStylesXML,
-		"xl/worksheets/sheet1.xml":   xlsxSheetXML(rows),
+	files := []struct {
+		name    string
+		content string
+	}{
+		{"[Content_Types].xml", xlsxContentTypesXML},
+		{"_rels/.rels", xlsxRootRelsXML},
+		{"xl/workbook.xml", xlsxWorkbookXML(sheetName)},
+		{"xl/_rels/workbook.xml.rels", xlsxWorkbookRelsXML},
+		{"xl/styles.xml", xlsxStylesXML},
+		{"xl/worksheets/sheet1.xml", xlsxSheetXML(rows)},
 	}
 
-	for name, content := range files {
-		w, err := zw.Create(name)
+	for _, f := range files {
+		w, err := zw.Create(f.name)
 		if err != nil {
 			_ = zw.Close()
 			return nil, err
 		}
-		if _, err := io.WriteString(w, content); err != nil {
+		if _, err := io.WriteString(w, f.content); err != nil {
 			_ = zw.Close()
 			return nil, err
 		}
@@ -148,10 +153,10 @@ type xmlRow struct {
 }
 
 type xmlCell struct {
-	Ref       string   `xml:"r,attr"`
-	Type      string   `xml:"t,attr"`
-	Value     string   `xml:"v"`
-	InlineStr xmlSI    `xml:"is"`
+	Ref       string `xml:"r,attr"`
+	Type      string `xml:"t,attr"`
+	Value     string `xml:"v"`
+	InlineStr xmlSI  `xml:"is"`
 }
 
 func parseWorksheet(data []byte, sharedStrings []string) ([][]string, error) {
@@ -265,17 +270,29 @@ func xlsxWorkbookXML(sheetName string) string {
 }
 
 func xlsxSheetXML(rows [][]string) string {
+	maxCols := 6
+	for _, r := range rows {
+		if len(r) > maxCols {
+			maxCols = len(r)
+		}
+	}
+
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` + "\n")
 	b.WriteString(`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` + "\n")
+	b.WriteString(fmt.Sprintf(`  <cols><col min="1" max="%d" width="25" customWidth="1"/></cols>`+"\n", maxCols))
 	b.WriteString(`  <sheetData>` + "\n")
 
 	for rIdx, row := range rows {
 		rowNum := rIdx + 1
+		styleAttr := ""
+		if rIdx == 0 {
+			styleAttr = ` s="1"`
+		}
 		b.WriteString(fmt.Sprintf(`    <row r="%d">`, rowNum))
 		for cIdx, val := range row {
 			cellRef := fmt.Sprintf("%s%d", columnNameFromIndex(cIdx), rowNum)
-			b.WriteString(fmt.Sprintf(`<c r="%s" t="inlineStr"><is><t>%s</t></is></c>`, cellRef, xmlEscape(val)))
+			b.WriteString(fmt.Sprintf(`<c r="%s"%s t="inlineStr"><is><t>%s</t></is></c>`, cellRef, styleAttr, xmlEscape(val)))
 		}
 		b.WriteString(`</row>` + "\n")
 	}
@@ -307,9 +324,22 @@ const xlsxWorkbookRelsXML = `<?xml version="1.0" encoding="UTF-8" standalone="ye
 
 const xlsxStylesXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
-  <fills count="1"><fill><patternFill patternType="none"/></fill></fills>
-  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
-  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>
+  <fonts count="2">
+    <font><sz val="11"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><name val="Calibri"/></font>
+  </fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <borders count="1">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+  </borders>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
+  <cellXfs count="2">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+  </cellXfs>
 </styleSheet>`
