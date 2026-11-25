@@ -1,7 +1,9 @@
 package routes
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -68,6 +70,18 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB) {
 	// Epic 4 Service & Controller
 	scheduleService := services.NewScheduleService(db, auditLogger)
 	scheduleController := controllers.NewScheduleController(scheduleService)
+
+	// Epic 6 Service, Background Worker (F6.3), & Controller
+	teacherAttendanceService := services.NewTeacherAttendanceService(db, auditLogger)
+	teacherAttendanceService.StartAutoAbsentWorker(context.Background(), time.Minute)
+	teacherAttendanceController := controllers.NewTeacherAttendanceController(teacherAttendanceService)
+
+	// Epic 5 Service & Controller
+	studentAttendanceService := services.NewStudentAttendanceService(db, auditLogger, teacherAttendanceService)
+	studentAttendanceController := controllers.NewStudentAttendanceController(studentAttendanceService)
+
+	// Static file serving untuk bukti foto/PDF izin, sakit, & surat tatib/dispensasi
+	r.Static("/uploads", "./uploads")
 
 	// Endpoint terautentikasi (/api/v1). Permission dicek langsung ke DB
 	// (user_roles -> role_permissions -> permissions) dengan prinsip default deny.
@@ -277,6 +291,123 @@ func RegisterRoutes(r *gin.Engine, db *gorm.DB) {
 			schedules.DELETE("/:id",
 				middlewares.RequirePermission(db, models.PermissionScheduleDelete),
 				scheduleController.Delete,
+			)
+
+			// Epic 5 F5.1 & F5.2: Form Ceklis Absensi Siswa & Submit Absensi per Jadwal
+			schedules.GET("/:id/attendance-form",
+				middlewares.RequireAnyPermission(db,
+					models.PermissionAttendanceInput,
+					models.PermissionAttendanceInputFallback,
+					models.PermissionAttendanceView,
+				),
+				studentAttendanceController.GetAttendanceForm,
+			)
+			schedules.POST("/:id/attendances",
+				middlewares.RequireAnyPermission(db,
+					models.PermissionAttendanceInput,
+					models.PermissionAttendanceInputFallback,
+				),
+				studentAttendanceController.SubmitScheduleAttendances,
+			)
+		}
+
+		// Epic 6 F6.1-F6.5: Kehadiran Guru & QR
+		teacherAttendance := apiV1.Group("/teacher-attendance")
+		{
+			teacherAttendance.POST("/qr/generate",
+				middlewares.RequirePermission(db, models.PermissionTeacherAttendanceGenerateQR),
+				teacherAttendanceController.GenerateQR,
+			)
+			teacherAttendance.POST("/confirm",
+				middlewares.RequirePermission(db, models.PermissionTeacherAttendanceConfirm),
+				teacherAttendanceController.Confirm,
+			)
+			teacherAttendance.GET("/export",
+				middlewares.RequirePermission(db, models.PermissionTeacherAttendanceExport),
+				teacherAttendanceController.Export,
+			)
+			teacherAttendance.GET("",
+				middlewares.RequirePermission(db, models.PermissionTeacherAttendanceView),
+				teacherAttendanceController.List,
+			)
+			teacherAttendance.GET("/:id",
+				middlewares.RequirePermission(db, models.PermissionTeacherAttendanceView),
+				teacherAttendanceController.Get,
+			)
+			teacherAttendance.PATCH("/:id/keterangan",
+				middlewares.RequirePermission(db, models.PermissionTeacherAttendanceAnnotate),
+				teacherAttendanceController.Annotate,
+			)
+			teacherAttendance.PATCH("/:id/correct",
+				middlewares.RequirePermission(db, models.PermissionTeacherAttendanceAnnotate),
+				teacherAttendanceController.CorrectStatus,
+			)
+			teacherAttendance.PATCH("/:id/status",
+				middlewares.RequirePermission(db, models.PermissionTeacherAttendanceAnnotate),
+				teacherAttendanceController.CorrectStatus,
+			)
+		}
+
+		// Epic 5 F5.3-F5.5 & F5.10: Absensi Siswa, Rekap, Export, & Peringatan Dini Alpha
+		attendances := apiV1.Group("/attendances")
+		{
+			attendances.GET("",
+				middlewares.RequirePermission(db, models.PermissionAttendanceView),
+				studentAttendanceController.ListAttendances,
+			)
+			attendances.GET("/recap",
+				middlewares.RequirePermission(db, models.PermissionAttendanceView),
+				studentAttendanceController.RecapAttendances,
+			)
+			attendances.GET("/export",
+				middlewares.RequirePermission(db, models.PermissionAttendanceExport),
+				studentAttendanceController.ExportAttendances,
+			)
+			attendances.GET("/alpha-warnings",
+				middlewares.RequirePermission(db, models.PermissionAttendanceView),
+				studentAttendanceController.ListAlphaWarnings,
+			)
+			attendances.PATCH("/:id",
+				middlewares.RequirePermission(db, models.PermissionAttendanceUpdate),
+				studentAttendanceController.UpdateAttendance,
+			)
+		}
+
+		// Epic 5 F5.6, F5.7, F5.9: Pengajuan & Verifikasi Izin/Sakit Siswa
+		leaveRequests := apiV1.Group("/leave-requests")
+		{
+			leaveRequests.POST("",
+				middlewares.RequirePermission(db, models.PermissionLeaveRequestSubmit),
+				studentAttendanceController.SubmitLeaveRequest,
+			)
+			leaveRequests.GET("",
+				middlewares.RequirePermission(db, models.PermissionAttendanceView),
+				studentAttendanceController.ListLeaveRequests,
+			)
+			leaveRequests.GET("/class-today",
+				middlewares.RequirePermission(db, models.PermissionAttendanceView),
+				studentAttendanceController.GetClassTodayLeaveSummary,
+			)
+			leaveRequests.PATCH("/:id/approve",
+				middlewares.RequirePermission(db, models.PermissionLeaveRequestReview),
+				studentAttendanceController.ApproveLeaveRequest,
+			)
+			leaveRequests.PATCH("/:id/reject",
+				middlewares.RequirePermission(db, models.PermissionLeaveRequestReview),
+				studentAttendanceController.RejectLeaveRequest,
+			)
+		}
+
+		// Epic 5 F5.8: Upload & Lihat Surat Izin Pulang (Tatib) & Surat Dispensasi
+		permissionLetters := apiV1.Group("/permission-letters")
+		{
+			permissionLetters.POST("",
+				middlewares.RequirePermission(db, models.PermissionPermissionLetterUpload),
+				studentAttendanceController.UploadPermissionLetter,
+			)
+			permissionLetters.GET("",
+				middlewares.RequirePermission(db, models.PermissionAttendanceView),
+				studentAttendanceController.ListPermissionLetters,
 			)
 		}
 	}

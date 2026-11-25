@@ -117,6 +117,28 @@ var (
 	ErrScheduleAlreadyLesson   = NewAppError(http.StatusConflict, CodeScheduleAlreadyLesson, "Jadwal ini sudah berstatus pelajaran")
 	ErrScheduleInUse           = NewAppError(http.StatusConflict, CodeScheduleInUse, "Jadwal tidak dapat diubah atau dihapus karena sudah memiliki data absensi atau jurnal terkait")
 
+	// Epic 5 - Student Attendance
+	ErrAttendanceFormNotAvailable  = NewAppError(http.StatusForbidden, CodeAttendanceFormNotAvailable, "Form absensi belum terbuka untuk jadwal ini")
+	ErrAttendanceAlreadyRecorded   = NewAppError(http.StatusConflict, CodeAttendanceAlreadyRecorded, "Absensi pada jadwal ini sudah pernah dicatat")
+	ErrAttendanceNotFound          = NewAppError(http.StatusNotFound, CodeAttendanceNotFound, "Data absensi siswa tidak ditemukan")
+	ErrLeaveRequestDeadlinePassed  = NewAppError(http.StatusUnprocessableEntity, CodeLeaveRequestDeadlinePassed, "Batas waktu pengajuan izin/sakit hari ini telah lewat (maksimal pukul 09:00 WIB)")
+	ErrLeaveRequestAlreadyActive   = NewAppError(http.StatusConflict, CodeLeaveRequestAlreadyActive, "Siswa sudah memiliki pengajuan izin/sakit untuk tanggal ini")
+	ErrLeaveRequestAlreadyReviewed = NewAppError(http.StatusConflict, CodeLeaveRequestAlreadyReviewed, "Pengajuan izin/sakit ini sudah diproses dan bersifat final")
+	ErrLeaveRequestNotFound        = NewAppError(http.StatusNotFound, CodeLeaveRequestNotFound, "Pengajuan izin/sakit tidak ditemukan")
+	ErrEvidenceFileRequired        = NewAppError(http.StatusUnprocessableEntity, CodeEvidenceFileRequired, "Bukti foto atau dokumen PDF wajib dilampirkan")
+	ErrEvidenceFileInvalid         = NewAppError(http.StatusUnprocessableEntity, CodeEvidenceFileInvalid, "Format atau ukuran file bukti tidak valid (hanya JPG, PNG, WEBP, atau PDF maksimal 5 MB)")
+	ErrStudentOutOfScope           = NewAppError(http.StatusForbidden, CodeStudentOutOfScope, "Siswa berada di luar cakupan kelas Anda")
+	ErrPermissionLetterNotFound    = NewAppError(http.StatusNotFound, CodePermissionLetterNotFound, "Surat izin tidak ditemukan")
+
+	// Epic 6 - Teacher Attendance & QR
+	ErrQRCodeExpired                    = NewAppError(http.StatusBadRequest, CodeQRCodeExpired, "QR Code atau kode cadangan sudah kedaluwarsa, silakan generate ulang")
+	ErrQRCodeInvalid                    = NewAppError(http.StatusBadRequest, CodeQRCodeInvalid, "QR Code atau kode cadangan tidak valid")
+	ErrTeacherAttendanceAlreadyRecorded = NewAppError(http.StatusConflict, CodeTeacherAttendanceAlreadyRecorded, "Kehadiran guru untuk jadwal ini sudah tercatat")
+	ErrTeacherAttendanceNotFound        = NewAppError(http.StatusNotFound, CodeTeacherAttendanceNotFound, "Data kehadiran guru tidak ditemukan")
+	ErrScheduleTypeNotSupported         = NewAppError(http.StatusUnprocessableEntity, CodeScheduleTypeNotSupported, "Operasi ini hanya berlaku untuk jadwal bertipe pelajaran")
+	ErrScheduleNotActive                = NewAppError(http.StatusUnprocessableEntity, CodeScheduleNotActive, "Tidak ada jadwal pelajaran yang sedang berlangsung saat ini")
+	ErrReasonRequired                   = NewAppError(http.StatusUnprocessableEntity, CodeReasonRequired, "Alasan koreksi wajib diisi")
+
 	ErrOTPInvalid       = NewAppError(http.StatusBadRequest, CodeOTPInvalid, "Kode OTP salah")
 	ErrOTPExpired       = NewAppError(http.StatusBadRequest, CodeOTPExpired, "Kode OTP sudah kedaluwarsa, silakan minta kode baru")
 	ErrOTPTooMany       = NewAppError(http.StatusTooManyRequests, CodeOTPTooMany, "Terlalu banyak percobaan OTP, silakan minta kode baru")

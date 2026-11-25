@@ -50,6 +50,29 @@ const (
 	CodeScheduleAlreadyLesson   = "SCHEDULE_ALREADY_LESSON"
 	CodeScheduleInUse           = "SCHEDULE_IN_USE"
 
+	// Epic 5 - Student Attendance
+	CodeAttendanceRecorded          = "ATTENDANCE_RECORDED"
+	CodeAttendanceFormNotAvailable  = "ATTENDANCE_FORM_NOT_AVAILABLE"
+	CodeAttendanceAlreadyRecorded   = "ATTENDANCE_ALREADY_RECORDED"
+	CodeAttendanceNotFound          = "ATTENDANCE_NOT_FOUND"
+	CodeLeaveRequestDeadlinePassed  = "LEAVE_REQUEST_DEADLINE_PASSED"
+	CodeLeaveRequestAlreadyActive   = "LEAVE_REQUEST_ALREADY_ACTIVE"
+	CodeLeaveRequestAlreadyReviewed = "LEAVE_REQUEST_ALREADY_REVIEWED"
+	CodeLeaveRequestNotFound        = "LEAVE_REQUEST_NOT_FOUND"
+	CodeEvidenceFileRequired        = "EVIDENCE_FILE_REQUIRED"
+	CodeEvidenceFileInvalid         = "EVIDENCE_FILE_INVALID"
+	CodeStudentOutOfScope           = "STUDENT_OUT_OF_SCOPE"
+	CodePermissionLetterNotFound    = "PERMISSION_LETTER_NOT_FOUND"
+
+	// Epic 6 - Teacher Attendance & QR
+	CodeQRCodeExpired                    = "QR_CODE_EXPIRED"
+	CodeQRCodeInvalid                    = "QR_CODE_INVALID"
+	CodeTeacherAttendanceAlreadyRecorded = "TEACHER_ATTENDANCE_ALREADY_RECORDED"
+	CodeTeacherAttendanceNotFound        = "TEACHER_ATTENDANCE_NOT_FOUND"
+	CodeScheduleTypeNotSupported         = "SCHEDULE_TYPE_NOT_SUPPORTED"
+	CodeScheduleNotActive                = "SCHEDULE_NOT_ACTIVE"
+	CodeReasonRequired                   = "REASON_REQUIRED"
+
 	CodeRegisterSuccess = "AUTH_REGISTER_SUCCESS"
 	CodeLoginSuccess    = "AUTH_LOGIN_SUCCESS"
 	CodeLogoutSuccess   = "AUTH_LOGOUT_SUCCESS"

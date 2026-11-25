@@ -501,4 +501,8 @@ Detail teknis: method `GET, POST, PUT, PATCH, DELETE, OPTIONS`; header `Origin, 
   - [x] Tahun Ajaran (`F3.5`), Mata Pelajaran (`F3.4`), Kelas (`F3.3`), Data Guru (`F3.2`), Data Siswa (`F3.1`)
 - [x] **Epic 4 — Schedule Management**
   - [x] Template Excel (`F4.1`), Import 2 Langkah Preview & Confirm (`F4.2`), Lihat Jadwal & Scoping Role (`F4.3`), Ubah Jadwal (`F4.4`), Konversi Kegiatan (`F4.6`), Hapus Jadwal (`F4.5`)
+- [x] **Epic 5 — Student Attendance**
+  - [x] Form & Submit Ceklis Absensi Guru (`F5.1`), Fallback Wali Kelas (`F5.2`), Ubah Status Absensi (`F5.3`), Lihat/Rekap/Export Excel (`F5.4`–`F5.5`), Pengajuan & Verifikasi Izin/Sakit (`F5.6`–`F5.7`), Upload Surat Pulang Tatib & Dispensasi (`F5.8`), Widget Kelas Hari Ini (`F5.9`), Akumulasi Alpha & Peringatan Dini 3/5/9 Hari (`F5.10`)
+- [x] **Epic 6 — Teacher Attendance & QR**
+  - [x] Generate QR & Kode Cadangan 30 Detik (`F6.1`), Konfirmasi Kehadiran & Deteksi Guru Pengganti (`F6.2`), Background Auto-Absent (`F6.3`), Rekap/Keterangan/Koreksi Status (`F6.4`), Export Excel (`F6.5`)
 - [ ] … (total 14 Epic sesuai PRD)

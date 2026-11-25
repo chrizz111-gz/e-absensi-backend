@@ -12,16 +12,21 @@ import (
 
 // Kode target_type kanonik pada tabel activity_logs (009_activity_logs_target.sql).
 const (
-	TargetTypeUser         = "USER"
-	TargetTypeStudent      = "STUDENT"
-	TargetTypeTeacher      = "TEACHER"
-	TargetTypeClass        = "CLASS"
-	TargetTypeSubject      = "SUBJECT"
-	TargetTypeAcademicYear = "ACADEMIC_YEAR"
-	TargetTypeSchedule     = "SCHEDULE"
+	TargetTypeUser              = "USER"
+	TargetTypeStudent           = "STUDENT"
+	TargetTypeTeacher           = "TEACHER"
+	TargetTypeClass             = "CLASS"
+	TargetTypeSubject           = "SUBJECT"
+	TargetTypeAcademicYear      = "ACADEMIC_YEAR"
+	TargetTypeSchedule          = "SCHEDULE"
+	TargetTypeTeacherAttendance = "TEACHER_ATTENDANCE"
+	TargetTypeStudentAttendance = "STUDENT_ATTENDANCE"
+	TargetTypeLeaveRequest      = "LEAVE_REQUEST"
+	TargetTypePermissionLetter  = "PERMISSION_LETTER"
+	TargetTypeAlphaWarning      = "ALPHA_WARNING"
 )
 
-// Kode event kanonik Epic 2, Epic 3, dan Epic 4 pada tabel activity_logs.
+// Kode event kanonik Epic 2 hingga Epic 6 pada tabel activity_logs.
 const (
 	// Epic 2
 	ActionAccountCreated     = "ACCOUNT_CREATED"
@@ -53,6 +58,23 @@ const (
 	ActionScheduleConvertedToActivity = "SCHEDULE_CONVERTED_TO_ACTIVITY"
 	ActionScheduleRevertedToLesson    = "SCHEDULE_REVERTED_TO_LESSON"
 	ActionScheduleDeleted             = "SCHEDULE_DELETED"
+
+	// Epic 5
+	ActionAttendanceRecorded       = "ATTENDANCE_RECORDED"
+	ActionAttendanceUpdated        = "ATTENDANCE_UPDATED"
+	ActionAttendanceExported       = "ATTENDANCE_EXPORTED"
+	ActionLeaveRequestSubmitted    = "LEAVE_REQUEST_SUBMITTED"
+	ActionLeaveRequestApproved     = "LEAVE_REQUEST_APPROVED"
+	ActionLeaveRequestRejected     = "LEAVE_REQUEST_REJECTED"
+	ActionPermissionLetterUploaded = "PERMISSION_LETTER_UPLOADED"
+	ActionAlphaWarningTriggered    = "ALPHA_WARNING_TRIGGERED"
+
+	// Epic 6
+	ActionTeacherAttendanceQRGenerated  = "TEACHER_ATTENDANCE_QR_GENERATED"
+	ActionTeacherAttendanceConfirmed    = "TEACHER_ATTENDANCE_CONFIRMED"
+	ActionTeacherAttendanceMarkedAbsent = "TEACHER_ATTENDANCE_MARKED_ABSENT"
+	ActionTeacherAttendanceAnnotated    = "TEACHER_ATTENDANCE_ANNOTATED"
+	ActionTeacherAttendanceCorrected    = "TEACHER_ATTENDANCE_CORRECTED"
 )
 
 // AuditEvent adalah satu baris log aktivitas yang ditulis di transaksi yang
@@ -90,6 +112,11 @@ func (gormAuditLogger) LogTx(ctx context.Context, tx *gorm.DB, event AuditEvent)
 		targetType = TargetTypeUser
 	}
 
+	var actorUserID interface{}
+	if event.ActorID > 0 {
+		actorUserID = event.ActorID
+	}
+
 	var targetUserID interface{}
 	if targetType == TargetTypeUser && event.TargetID > 0 {
 		targetUserID = event.TargetID
@@ -108,7 +135,7 @@ func (gormAuditLogger) LogTx(ctx context.Context, tx *gorm.DB, event AuditEvent)
 	return tx.WithContext(ctx).Exec(`
 		INSERT INTO activity_logs (actor_user_id, target_user_id, target_type, target_id, action, snapshot)
 		VALUES (?, ?, ?, ?, ?, ?::jsonb)
-	`, event.ActorID, targetUserID, targetType, targetID, event.Action, snapshot).Error
+	`, actorUserID, targetUserID, targetType, targetID, event.Action, snapshot).Error
 }
 
 type noopAuditLogger struct{}

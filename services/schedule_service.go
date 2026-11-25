@@ -505,6 +505,16 @@ func (s *ScheduleService) Update(ctx context.Context, actorID, id int64, req dto
 			return utils.ErrStaleData
 		}
 
+		if s.usage != nil {
+			inUse, err := s.usage.HasAnyDependentRecords(id)
+			if err != nil {
+				return utils.ErrInternal
+			}
+			if inUse {
+				return utils.ErrScheduleInUse
+			}
+		}
+
 		currentFull, err := txSchedules.FindByID(id)
 		if err != nil {
 			return utils.ErrInternal
@@ -704,6 +714,16 @@ func (s *ScheduleService) ConvertToActivity(ctx context.Context, actorID, id int
 
 		if locked.ScheduleType == models.ScheduleTypeActivity {
 			return utils.ErrScheduleAlreadyActivity
+		}
+
+		if s.usage != nil {
+			inUse, err := s.usage.HasAnyDependentRecords(id)
+			if err != nil {
+				return utils.ErrInternal
+			}
+			if inUse {
+				return utils.ErrScheduleInUse
+			}
 		}
 
 		currentFull, err := txSchedules.FindByID(id)

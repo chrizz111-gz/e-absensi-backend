@@ -1,7 +1,5 @@
-
 # E-Absensi — Dokumentasi API (Epic 1, 2, 3, & 4)
 
-Referensi kontrak API untuk **tim frontend (Mobile, Web, Desktop)**. Dokumen ini berisi **konvensi response, alur autentikasi, daftar endpoint, kode error, role, permission, dan rate limit**.
 Referensi kontrak API untuk **tim frontend (Mobile, Web, Desktop)**. Dokumen ini berisi **konvensi response, alur autentikasi, daftar endpoint, kode error, role, permission, dan rate limit** untuk modul **Epic 1 (Auth)**, **Epic 2 (User & RBAC)**, **Epic 3 (Master Data)**, dan **Epic 4 (Jadwal)**.
 
 > Cara menjalankan server, konfigurasi `.env`, skenario uji manual, dan CORS ada di **[README.md](README.md)**.
@@ -1295,6 +1293,49 @@ beserta 1 baris contoh.
 
 ---
 
+## Epic 5 — Student Attendance
+
+Seluruh endpoint Epic 5 wajib memakai **Bearer access token** dan dilindungi middleware RBAC berbasis database. Input absensi siswa pada jadwal pelajaran (`F5.1`) bergantung pada konfirmasi kehadiran guru (`Epic 6 F6.2`), atau menggunakan jalur *fallback* Wali Kelas (`F5.2`) setelah jam pelajaran berakhir bila guru tidak hadir.
+
+### Matriks Permission & Endpoint Epic 5
+
+| Method | Path | Permission | Role yang Diizinkan | Deskripsi |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/schedules/{id}/attendance-form` | `attendance.input` / `attendance.input_fallback` / `attendance.view` | `guru_mapel`, `wali_kelas`, `admin`, `waka_kurikulum` | Ambil form ceklis absensi siswa (+ pre-fill izin/sakit disetujui) |
+| POST | `/api/v1/schedules/{id}/attendances` | `attendance.input` / `attendance.input_fallback` | `guru_mapel`, `wali_kelas` | Submit ceklis absensi siswa (`ceklis_guru` / `fallback_wali_kelas`) |
+| PATCH | `/api/v1/attendances/{id}` | `attendance.update` | `admin`, `waka_kurikulum`, `wali_kelas`, `guru_mapel` | Ubah status absensi siswa (`manual_edit`, wajib `updated_at`) |
+| GET | `/api/v1/attendances` | `attendance.view` | Seluruh 7 role | Daftar absensi siswa + ringkasan harian (di-scope per role) |
+| GET | `/api/v1/attendances/recap` | `attendance.view` | Seluruh 7 role | Rekap absensi per siswa + total hari Alpha & peringatan dini |
+| GET | `/api/v1/attendances/export` | `attendance.export` | `admin`, `waka_kurikulum`, `waka_kesiswaan`, `wali_kelas` | Export rekap absensi siswa ke Excel (`.xlsx`) |
+| GET | `/api/v1/attendances/alpha-warnings` | `attendance.view` | `admin`, `waka_kurikulum`, `waka_kesiswaan`, `wali_kelas`, `siswa`, `siswa_inti` | Daftar log peringatan dini akumulasi Alpha (`3 / 5 / 9` hari) |
+| POST | `/api/v1/leave-requests` | `leave_request.submit` | `siswa`, `siswa_inti` | Pengajuan izin/sakit hari ini sebelum pukul `09:00` WIB |
+| GET | `/api/v1/leave-requests` | `attendance.view` | Seluruh 7 role | Daftar pengajuan izin/sakit (dengan masking privasi untuk Guru/Siswa Inti) |
+| GET | `/api/v1/leave-requests/class-today` | `attendance.view` | `siswa_inti`, `guru_mapel`, `wali_kelas`, `admin`, `waka_*` | Widget status izin/sakit kelas hari ini (tanpa alasan/bukti pribadi) |
+| PATCH | `/api/v1/leave-requests/{id}/approve` | `leave_request.review` | `wali_kelas` | Setujui izin/sakit → auto-fill `izin`/`sakit` ke seluruh mapel hari itu |
+| PATCH | `/api/v1/leave-requests/{id}/reject` | `leave_request.review` | `wali_kelas` | Tolak izin/sakit → auto-fill `alpha` ke seluruh mapel hari itu |
+| POST | `/api/v1/permission-letters` | `permission_letter.upload` | `siswa_inti` | Upload bukti surat `pulang_tatib` atau `dispensasi` teman sekelas |
+| GET | `/api/v1/permission-letters` | `attendance.view` | Seluruh 7 role | Daftar surat izin pulang tatib / dispensasi |
+
+---
+
+## Epic 6 — Teacher Attendance & QR
+
+Kehadiran guru wajib dikonfirmasi per sesi jadwal pelajaran (`type = 'pelajaran'`) melalui pemindaian QR Code atau kode cadangan 6 karakter (`TTL 30 detik`) yang dibuat oleh `siswa_inti` atau `wali_kelas`.
+
+### Matriks Permission & Endpoint Epic 6
+
+| Method | Path | Permission | Role yang Diizinkan | Deskripsi |
+| --- | --- | --- | --- | --- |
+| POST | `/api/v1/teacher-attendance/qr/generate` | `teacher_attendance.generate_qr` | `siswa_inti`, `wali_kelas` | Generate `qr_token` & `backup_code` 6 karakter (TTL 30 detik) untuk jadwal pelajaran aktif |
+| POST | `/api/v1/teacher-attendance/confirm` | `teacher_attendance.confirm` | `guru_mapel` | Konfirmasi kehadiran via `qr_token` atau `backup_code` (otomatis deteksi `hadir` vs `guru_pengganti`) |
+| GET | `/api/v1/teacher-attendance` | `teacher_attendance.view` | `admin`, `waka_kurikulum`, `waka_kesiswaan`, `guru_mapel` | Daftar & statistik kehadiran guru (Guru Mapel di-scope miliknya) |
+| GET | `/api/v1/teacher-attendance/{id}` | `teacher_attendance.view` | `admin`, `waka_kurikulum`, `waka_kesiswaan`, `guru_mapel` | Detail satu kehadiran guru |
+| PATCH | `/api/v1/teacher-attendance/{id}/keterangan` | `teacher_attendance.annotate` | `admin`, `waka_kurikulum` | Tambah/ubah catatan keterangan kehadiran guru (wajib `updated_at`) |
+| PATCH | `/api/v1/teacher-attendance/{id}/correct` | `teacher_attendance.annotate` | `admin`, `waka_kurikulum` | Koreksi status kehadiran guru (`koreksi_admin`, wajib `reason` & `updated_at`) |
+| GET | `/api/v1/teacher-attendance/export` | `teacher_attendance.export` | `admin`, `waka_kurikulum` | Export laporan kehadiran guru ke Excel (`.xlsx`) |
+
+---
+
 ## Daftar Kode Error
 
 Branching di frontend sebaiknya memakai field **`code`**, bukan `message`.
@@ -1361,6 +1402,23 @@ Branching di frontend sebaiknya memakai field **`code`**, bukan `message`.
 | `SCHEDULE_ALREADY_ACTIVITY`      | 409  | Jadwal sudah berstatus `kegiatan`                                           |
 | `SCHEDULE_ALREADY_LESSON`        | 409  | Jadwal sudah berstatus `pelajaran`                                          |
 | `SCHEDULE_IN_USE`                | 409  | Jadwal sudah memiliki data absensi/jurnal/kegiatan terkait                  |
+| `ATTENDANCE_FORM_NOT_AVAILABLE`  | 403  | Form absensi belum terbuka (guru belum konfirmasi QR / jam belum selesai)   |
+| `ATTENDANCE_ALREADY_RECORDED`    | 409  | Ceklis absensi pada jadwal ini sudah pernah disubmit                        |
+| `ATTENDANCE_NOT_FOUND`           | 404  | Data absensi siswa tidak ditemukan                                          |
+| `LEAVE_REQUEST_DEADLINE_PASSED`  | 422  | Pengajuan izin/sakit melewati batas pukul `09:00` WIB hari ini              |
+| `LEAVE_REQUEST_ALREADY_ACTIVE`   | 409  | Siswa sudah memiliki pengajuan izin/sakit pada tanggal ini                  |
+| `LEAVE_REQUEST_ALREADY_REVIEWED` | 409  | Pengajuan izin/sakit sudah pernah diverifikasi Wali Kelas (keputusan final) |
+| `LEAVE_REQUEST_NOT_FOUND`        | 404  | Data pengajuan izin/sakit tidak ditemukan                                   |
+| `EVIDENCE_FILE_REQUIRED`         | 422  | File bukti foto atau PDF wajib dilampirkan                                  |
+| `EVIDENCE_FILE_INVALID`          | 422  | Format atau ukuran file bukti tidak valid (maks 5 MB, JPG/PNG/WEBP/PDF)     |
+| `STUDENT_OUT_OF_SCOPE`           | 403  | Siswa berada di luar cakupan kelas pemanggil                                |
+| `QR_CODE_EXPIRED`                | 400  | QR Code atau kode cadangan sudah melewati masa berlaku 30 detik             |
+| `QR_CODE_INVALID`                | 400  | QR Code atau kode cadangan tidak dikenal                                    |
+| `TEACHER_ATTENDANCE_ALREADY_RECORDED` | 409 | Kehadiran guru untuk jadwal ini sudah tercatat                           |
+| `TEACHER_ATTENDANCE_NOT_FOUND`   | 404  | Data kehadiran guru tidak ditemukan                                         |
+| `SCHEDULE_TYPE_NOT_SUPPORTED`    | 422  | Operasi hanya berlaku untuk jadwal bertipe `pelajaran`                      |
+| `SCHEDULE_NOT_ACTIVE`            | 422  | Tidak ada jadwal pelajaran yang sedang berlangsung saat ini                 |
+| `REASON_REQUIRED`                | 422  | Alasan koreksi status kehadiran guru wajib diisi                            |
 | `INTERNAL_ERROR`                 | 500  | Kesalahan server                                                            |
 | `RATE_LIMITED`                   | 429  | Terlalu banyak request per-IP                                               |
 | `OTP_INVALID`                    | 400  | Kode OTP salah                                                              |

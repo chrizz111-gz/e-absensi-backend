@@ -20,6 +20,12 @@ func RequirePermission(db *gorm.DB, permissionCode string) gin.HandlerFunc {
 	return requirePermission(repositories.NewPermissionRepository(db), permissionCode)
 }
 
+// RequireAnyPermission mengizinkan akses jika user memiliki salah satu dari
+// daftar permissionCodes yang diberikan (mis. attendance.input ATAU attendance.input_fallback).
+func RequireAnyPermission(db *gorm.DB, permissionCodes ...string) gin.HandlerFunc {
+	return requireAnyPermission(repositories.NewPermissionRepository(db), permissionCodes...)
+}
+
 // permissionChecker memisahkan middleware dari GORM agar bisa diuji dengan fake.
 type permissionChecker interface {
 	UserHasPermission(userID int64, permissionCode string) (bool, error)
@@ -27,6 +33,10 @@ type permissionChecker interface {
 
 // requirePermission menyusun handler dengan checker yang bisa diganti pada test.
 func requirePermission(checker permissionChecker, permissionCode string) gin.HandlerFunc {
+	return requireAnyPermission(checker, permissionCode)
+}
+
+func requireAnyPermission(checker permissionChecker, permissionCodes ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, ok := CurrentUserID(c)
 		if !ok {
@@ -34,16 +44,18 @@ func requirePermission(checker permissionChecker, permissionCode string) gin.Han
 			return
 		}
 
-		allowed, err := checker.UserHasPermission(userID, permissionCode)
-		if err != nil {
-			utils.AbortWithError(c, http.StatusInternalServerError, utils.CodeInternal, "Terjadi kesalahan pada server")
-			return
-		}
-		if !allowed {
-			utils.AbortWithError(c, http.StatusForbidden, utils.CodeForbidden, "Anda tidak memiliki hak akses")
-			return
+		for _, code := range permissionCodes {
+			allowed, err := checker.UserHasPermission(userID, code)
+			if err != nil {
+				utils.AbortWithError(c, http.StatusInternalServerError, utils.CodeInternal, "Terjadi kesalahan pada server")
+				return
+			}
+			if allowed {
+				c.Next()
+				return
+			}
 		}
 
-		c.Next()
+		utils.AbortWithError(c, http.StatusForbidden, utils.CodeForbidden, "Anda tidak memiliki hak akses")
 	}
 }

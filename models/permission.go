@@ -26,8 +26,8 @@ func (RolePermission) TableName() string {
 	return "role_permissions"
 }
 
-// Kode permission Epic 2, Epic 3, dan Epic 4. Nilai ini harus sama dengan seed
-// pada migrasi 004 dan 017.
+// Kode permission Epic 2, Epic 3, Epic 4, Epic 5, dan Epic 6.
+// Nilai ini harus sama dengan seed pada migrasi 004, 017, dan 024.
 const (
 	// Epic 2 - User & Role Management
 	PermissionAccountView      = "account.view"
@@ -64,4 +64,21 @@ const (
 	PermissionScheduleUpdate           = "schedule.update"
 	PermissionScheduleDelete           = "schedule.delete"
 	PermissionScheduleConvertActivity  = "schedule.convert_activity"
+
+	// Epic 5 - Student Attendance
+	PermissionAttendanceInput        = "attendance.input"
+	PermissionAttendanceInputFallback = "attendance.input_fallback"
+	PermissionAttendanceUpdate       = "attendance.update"
+	PermissionAttendanceView         = "attendance.view"
+	PermissionAttendanceExport       = "attendance.export"
+	PermissionLeaveRequestSubmit     = "leave_request.submit"
+	PermissionLeaveRequestReview     = "leave_request.review"
+	PermissionPermissionLetterUpload = "permission_letter.upload"
+
+	// Epic 6 - Teacher Attendance & QR
+	PermissionTeacherAttendanceGenerateQR = "teacher_attendance.generate_qr"
+	PermissionTeacherAttendanceConfirm    = "teacher_attendance.confirm"
+	PermissionTeacherAttendanceView       = "teacher_attendance.view"
+	PermissionTeacherAttendanceAnnotate   = "teacher_attendance.annotate"
+	PermissionTeacherAttendanceExport     = "teacher_attendance.export"
 )

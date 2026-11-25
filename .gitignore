@@ -24,3 +24,7 @@ Thumbs.db
 
 # Repo terpisah: skema DB (clone dari github.com/Akyrr/absensi)
 database/
+
+# Local API contracts & uploaded files
+contracts/
+uploads/
